@@ -5,13 +5,8 @@ from enum import Enum
 
 class GeoPoint(BaseModel):
     """Representa una coordenada geográfica."""
-    latitude: float = Field(..., ge=-90.0, le=90.0)
-    longitude: float = Field(..., ge=-180.0, le=180.0)
-
-class LocalizationEntry(BaseModel):
-    """Una entrada del historial de ubicaciones."""
-    latitude: float = Field(..., ge=-90.0, le=90.0)
-    longitude: float = Field(..., ge=-180.0, le=180.0)
+    latitud: float = Field(..., ge=-90.0, le=90.0)
+    longitud: float = Field(..., ge=-180.0, le=180.0)
     recorded_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de cuándo se registró esta ubicación")
 
 class EstadoDispositivo(str, Enum):
