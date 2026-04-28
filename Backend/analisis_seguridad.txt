@@ -1,0 +1,107 @@
+================================================================================
+ANÁLISIS DE SEGURIDAD - Services UbiLife
+================================================================================
+
+### 🔴 CRÍTICO
+
+1. **service_cuidador.py:99** - Timing attack en autenticación
+   - El mensaje "Acceso denegado" es idéntico si el email no existe o si la contraseña es incorrecta
+   - Esto permite enumerar usuarios válidos (enumeration attack)
+
+2. **service_paciente.py:7-10** - Conexiones globales
+   - `conexion = conexion_database()` se ejecuta al importar el módulo
+   - Si la DB no está disponible, todo el servicio falla
+
+### 🟠 MEDIO
+
+3. **service_paciente.py:46 y 68** - Sin verificación de propiedad
+   - Cualquiera puede borrar/actualizar cualquier paciente si conoce el ID
+   - No se verifica que quien hace la acción sea el cuidador owner
+
+4. **service_cuidador.py:40** - Eliminación sin verificación
+   - `borrar_cuidador(email)` no requiere autenticación
+   - Cualquiera puede eliminar cualquier cuenta
+
+5. **service_paciente.py:96** - Sin validación de ubicación
+   - `guardar_ubicacion` acepta cualquier lat/long sin validar rangos
+   - Podrían guardarse coordenadas inválidas
+
+6. **service_dispositivo.py:69** - Actualización sin restricciones
+   - Cualquiera puede actualizar cualquier dispositivo si conoce el ID
+
+### 🟡 BAJO
+
+7. **service_cuidador.py:20** - Rounds de bcrypt por defecto (12)
+   - Funciona, pero podría ser configurado explícitamente
+
+8. **Sin rate limiting** - No hay protección contra ataques de fuerza bruta
+
+9. **Sin sanitización** - Los datos de entrada se almacenan directamente (aunque Pydantic ayuda)
+
+10. **service_dispositivo.py:125** - `anunciar_dispositivo` sin autenticación
+    - Cualquier dispositivo puede anunciarse y ser detectado
+
+### ✅ Lo que está bien
+- Contraseñas hasheadas con bcrypt
+- Uso de ObjectId para MongoDB
+- Excepciones capturadas y gestionadas
+
+================================================================================
+ANÁLISIS DE SEGURIDAD - Routes UbiLife
+================================================================================
+
+### 🔴 CRÍTICO
+
+1. **ruta_cliente.py:14** - DELETE sin autenticación
+   - `@router.delete("/eliminar")` recibe `email` como query param
+   - Cualquiera puede eliminar cualquier cuenta knowing el email
+
+2. **ruta_cliente.py:21** - PUT sin autenticación
+   - `@router.put("/actualizar")` sin verificar identidad
+   - Cualquiera puede cambiar datos de cualquier cuidador
+
+3. **ruta_cliente.py:28-29** - Autenticación en query params
+   - `@router.post("/verificar")` con email y password como query params
+   - Credenciales en URL = quedan en logs del servidor
+
+4. **ruta_paciente.py:14** - DELETE sin autenticación
+   - `@router.delete("/{patient_id}")` sin verificación
+   - Cualquiera puede borrar cualquier paciente
+
+5. **ruta_paciente.py:21** - PUT sin autenticación
+   - `@router.put("/{patient_id}")` sin verificación de propiedad
+
+6. **ruta_dispositivo.py:37** - PATCH sin autenticación
+   - `@router.patch("/actualizar/{id_dispositivo}")` abierto
+
+7. **ruta_dispositivo.py:47** - PATCH sin autenticación
+   - `@router.patch("/desvincular/{id_dispositivo}")` abierto
+
+8. **ruta_dispositivo.py:69** - POST sin autenticación
+   - `@router.post("/vincular")` abierto
+
+### 🟠 MEDIO
+
+9. **ruta_paciente.py:28** - No valida que el device_id sea del paciente
+   - Cualquier dispositivo podría asociarse a cualquier paciente
+
+10. **Sin validación de ownership** - Ninguna ruta verifica que el solicitante sea el dueño del recurso
+
+11. **ruta_dispositivo.py:59** - GET dispositivos disponibles
+    - Expone todos los dispositivos detectados sin auth
+
+### 🟡 BAJO
+
+12. **Sin rate limiting** en ninguna ruta
+
+13. **Exposición de IDs** - URLs exponen IDs legible (paciente_id, device_id)
+
+14. **Sin HTTPS forzado** - No hay redirect de HTTP a HTTPS
+
+15. **Errores muy descriptivos** - Los mensajes de error pueden revelar info interna
+
+### ✅ Lo que está bien
+- Uso de HTTPException con códigos apropiados
+- Separación de rutas por recurso
+- Tags para documentación automática
+================================================================================

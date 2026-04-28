@@ -1,0 +1,171 @@
+# services/service_zona_segura.py
+from datetime import datetime
+from math import radians, sin, cos, sqrt, atan2
+from database.database import conexion_database
+from models.model_zonasegura import CrearZonaSegura, ActualizarZonaSegura
+from utils.Logger import Logger
+
+
+def verificar_si_dentro(latitud_paciente: float, longitud_paciente: float,
+    latitud_centro: float, longitud_centro: float,
+    radio_metros: float) -> bool:
+    R = 6371000
+    lat1, lat2 = radians(latitud_paciente), radians(latitud_centro)
+    dlat = radians(latitud_centro - latitud_paciente)
+    dlng = radians(longitud_centro - longitud_paciente)
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
+    distancia = R * 2 * atan2(sqrt(a), sqrt(1 - a))
+    return distancia <= radio_metros
+
+
+async def crear_zona_segura(datos: CrearZonaSegura):
+    try:
+        coleccion = conexion_database()["ZonasSeguras"]
+
+        zona_existente = await coleccion.find_one({
+            "paciente_id": datos.paciente_id,
+            "nombre": datos.nombre
+        })
+        if zona_existente:
+            Logger.add_to_log("warn", f"Zona ya existe para paciente: {datos.paciente_id}")
+            return {"mensaje": "Ya existe una zona con ese nombre para este paciente"}
+
+        await coleccion.insert_one({
+            "paciente_id": datos.paciente_id,
+            "cuidador_id": datos.cuidador_id,
+            "nombre": datos.nombre,
+            "centro": datos.centro.model_dump(),
+            "radio_metros": datos.radio_metros,
+            "activa": datos.activa,
+            "created_at": datetime.utcnow()
+        })
+
+        Logger.add_to_log("info", f"Zona segura creada para paciente: {datos.paciente_id}")
+        return {"mensaje": "Zona segura creada exitosamente"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al crear zona segura: {ex}")
+        return {"error": f"No se pudo crear la zona segura: {ex}"}
+
+
+async def obtener_zonas_por_paciente(paciente_id: str) -> list:
+    try:
+        coleccion = conexion_database()["ZonasSeguras"]
+        cursor = coleccion.find({"paciente_id": paciente_id})
+
+        zonas = []
+        async for zona in cursor:
+            zona["id"] = str(zona["_id"])
+            del zona["_id"]
+            zonas.append(zona)
+
+        if not zonas:
+            Logger.add_to_log("warn", f"Sin zonas para paciente: {paciente_id}")
+            return {"mensaje": "No se encontraron zonas seguras para este paciente"}
+
+        Logger.add_to_log("info", f"Zonas obtenidas para paciente: {paciente_id}")
+        return zonas
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener zonas: {ex}")
+        return {"error": f"No se pudieron obtener las zonas seguras: {ex}"}
+
+
+async def obtener_zona_por_id(zona_id: str) -> dict | None:
+    try:
+        from bson import ObjectId
+        coleccion = conexion_database()["ZonasSeguras"]
+        zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
+
+        if not zona:
+            Logger.add_to_log("warn", f"Zona no encontrada: {zona_id}")
+            return {"mensaje": "No se encontró la zona segura"}
+
+        zona["id"] = str(zona["_id"])
+        del zona["_id"]
+        return zona
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener zona: {ex}")
+        return {"error": f"No se pudo obtener la zona segura: {ex}"}
+
+
+async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura):
+    try:
+        from bson import ObjectId
+        coleccion = conexion_database()["ZonasSeguras"]
+        zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
+
+        if not zona:
+            Logger.add_to_log("warn", f"Zona no encontrada para actualizar: {zona_id}")
+            return {"mensaje": "No se encontró la zona segura"}
+
+        campos = {}
+        if datos.nombre is not None:
+            campos["nombre"] = datos.nombre
+        if datos.centro is not None:
+            campos["centro"] = datos.centro.model_dump()
+        if datos.radio_metros is not None:
+            campos["radio_metros"] = datos.radio_metros
+        if datos.activa is not None:
+            campos["activa"] = datos.activa
+
+        if campos:
+            await coleccion.update_one({"_id": ObjectId(zona_id)}, {"$set": campos})
+
+        Logger.add_to_log("info", f"Zona segura actualizada: {zona_id}")
+        return {"mensaje": "Zona segura actualizada exitosamente"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al actualizar zona segura: {ex}")
+        return {"error": f"No se pudo actualizar la zona segura: {ex}"}
+
+
+async def eliminar_zona_segura(zona_id: str):
+    try:
+        from bson import ObjectId
+        coleccion = conexion_database()["ZonasSeguras"]
+        zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
+
+        if not zona:
+            Logger.add_to_log("warn", f"Zona no encontrada para eliminar: {zona_id}")
+            return {"mensaje": "No se encontró la zona segura"}
+
+        await coleccion.delete_one({"_id": ObjectId(zona_id)})
+
+        Logger.add_to_log("info", f"Zona segura eliminada: {zona_id}")
+        return {"mensaje": "Zona segura eliminada exitosamente"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al eliminar zona segura: {ex}")
+        return {"error": f"No se pudo eliminar la zona segura: {ex}"}
+
+
+async def verificar_paciente_en_zonas(paciente_id: str, latitud: float, longitud: float) -> dict:
+    try:
+        coleccion = conexion_database()["ZonasSeguras"]
+        cursor = coleccion.find({"paciente_id": paciente_id, "activa": True})
+
+        zonas_activas = [zona async for zona in cursor]
+
+        if not zonas_activas:
+            Logger.add_to_log("warn", f"Sin zonas activas para paciente: {paciente_id}")
+            return {"dentro": False, "zona": None, "mensaje": "El paciente no tiene zonas seguras activas"}
+
+        for zona in zonas_activas:
+            dentro = verificar_si_dentro(
+                latitud, longitud,
+                zona["centro"]["latitud"],
+                zona["centro"]["longitud"],
+                zona["radio_metros"]
+            )
+            if dentro:
+                Logger.add_to_log("info", f"Paciente {paciente_id} dentro de zona: {zona['nombre']}")
+                return {"dentro": True, "zona": zona["nombre"]}
+
+        Logger.add_to_log("warn", f"Paciente {paciente_id} fuera de todas las zonas seguras")
+        return {"dentro": False, "zona": None, "mensaje": "El paciente está fuera de todas las zonas seguras"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al verificar zonas: {ex}")
+        return {"error": f"No se pudo verificar la ubicación del paciente: {ex}"}
