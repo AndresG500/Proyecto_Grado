@@ -1,8 +1,9 @@
 # services/service_zona_segura.py
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
-from database.database import conexion_database
+from database.database import get_database
 from models.model_zonasegura import CrearZonaSegura, ActualizarZonaSegura
+from bson import ObjectId
 from utils.Logger import Logger
 
 
@@ -18,9 +19,24 @@ def verificar_si_dentro(latitud_paciente: float, longitud_paciente: float,
     return distancia <= radio_metros
 
 
+async def verificar_paciente_pertenece_a_cuidador(paciente_id: str, cuidador_email: str) -> bool:
+    try:
+        db = get_database()
+        cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+        if not cuidador:
+            return False
+        paciente = await db["Pacientes"].find_one({"_id": ObjectId(paciente_id)})
+        if not paciente:
+            return False
+        return str(paciente.get("id_cuidador")) == str(cuidador["_id"])
+    except Exception:
+        return False
+
+
 async def crear_zona_segura(datos: CrearZonaSegura):
     try:
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
 
         zona_existente = await coleccion.find_one({
             "paciente_id": datos.paciente_id,
@@ -48,9 +64,13 @@ async def crear_zona_segura(datos: CrearZonaSegura):
         return {"error": f"No se pudo crear la zona segura: {ex}"}
 
 
-async def obtener_zonas_por_paciente(paciente_id: str) -> list:
+async def obtener_zonas_por_paciente(paciente_id: str, cuidador_email: str) -> list:
+    if not await verificar_paciente_pertenece_a_cuidador(paciente_id, cuidador_email):
+        return {"error": "No tienes permiso para ver este paciente"}
+
     try:
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
         cursor = coleccion.find({"paciente_id": paciente_id})
 
         zonas = []
@@ -73,8 +93,8 @@ async def obtener_zonas_por_paciente(paciente_id: str) -> list:
 
 async def obtener_zona_por_id(zona_id: str) -> dict | None:
     try:
-        from bson import ObjectId
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
         zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
 
         if not zona:
@@ -90,15 +110,21 @@ async def obtener_zona_por_id(zona_id: str) -> dict | None:
         return {"error": f"No se pudo obtener la zona segura: {ex}"}
 
 
-async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura):
+async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura, cuidador_email: str):
     try:
-        from bson import ObjectId
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
         zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
 
         if not zona:
             Logger.add_to_log("warn", f"Zona no encontrada para actualizar: {zona_id}")
             return {"mensaje": "No se encontró la zona segura"}
+
+        if zona.get("cuidador_id"):
+            cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+            if cuidador and str(zona["cuidador_id"]) != str(cuidador["_id"]):
+                Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs zona {zona_id}")
+                return {"error": "No tienes permiso para actualizar esta zona"}
 
         campos = {}
         if datos.nombre is not None:
@@ -121,15 +147,21 @@ async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura):
         return {"error": f"No se pudo actualizar la zona segura: {ex}"}
 
 
-async def eliminar_zona_segura(zona_id: str):
+async def eliminar_zona_segura(zona_id: str, cuidador_email: str):
     try:
-        from bson import ObjectId
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
         zona = await coleccion.find_one({"_id": ObjectId(zona_id)})
 
         if not zona:
             Logger.add_to_log("warn", f"Zona no encontrada para eliminar: {zona_id}")
             return {"mensaje": "No se encontró la zona segura"}
+
+        if zona.get("cuidador_id"):
+            cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+            if cuidador and str(zona["cuidador_id"]) != str(cuidador["_id"]):
+                Logger.add_to_log("warn", f"Eliminación no autorizada: {cuidador_email} vs zona {zona_id}")
+                return {"error": "No tienes permiso para eliminar esta zona"}
 
         await coleccion.delete_one({"_id": ObjectId(zona_id)})
 
@@ -143,7 +175,8 @@ async def eliminar_zona_segura(zona_id: str):
 
 async def verificar_paciente_en_zonas(paciente_id: str, latitud: float, longitud: float) -> dict:
     try:
-        coleccion = conexion_database()["ZonasSeguras"]
+        db = get_database()
+        coleccion = db["ZonasSeguras"]
         cursor = coleccion.find({"paciente_id": paciente_id, "activa": True})
 
         zonas_activas = [zona async for zona in cursor]

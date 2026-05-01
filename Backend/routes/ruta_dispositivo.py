@@ -1,21 +1,19 @@
 # routes/route_dispositivo.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from models.model_dispositivo import CrearDispositivo, ActualizarDispositivo
 from services import service_dispositivo
+from security.dependencies import get_cuidador_actual
 
 router = APIRouter(prefix="/dispositivos", tags=["Dispositivos"])
 
 
-@router.post("/registrar")
-async def registrar_dispositivo(datos: CrearDispositivo):
-    resultado = await service_dispositivo.registrar_dispositivo(datos)
-    if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
-    return resultado
-
+# --- Endpoints protegidos (requieren JWT) ---
 
 @router.get("/obtener/{id_dispositivo}")
-async def obtener_dispositivo(id_dispositivo: str):
+async def obtener_dispositivo(
+    id_dispositivo: str,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
     resultado = await service_dispositivo.obtener_dispositivo(id_dispositivo)
     if "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
@@ -25,7 +23,10 @@ async def obtener_dispositivo(id_dispositivo: str):
 
 
 @router.get("/paciente/{paciente_id}")
-async def obtener_dispositivo_por_paciente(paciente_id: str):
+async def obtener_dispositivo_por_paciente(
+    paciente_id: str,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
     resultado = await service_dispositivo.obtener_dispositivo_por_paciente(paciente_id)
     if "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
@@ -35,29 +36,36 @@ async def obtener_dispositivo_por_paciente(paciente_id: str):
 
 
 @router.patch("/actualizar/{id_dispositivo}")
-async def actualizar_dispositivo(id_dispositivo: str, datos: ActualizarDispositivo):
-    resultado = await service_dispositivo.actualizar_dispositivo(id_dispositivo, datos)
+async def actualizar_dispositivo(
+    id_dispositivo: str,
+    datos: ActualizarDispositivo,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await service_dispositivo.actualizar_dispositivo(id_dispositivo, datos, cuidador_actual["email"])
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=403, detail=resultado["error"])
     if "mensaje" in resultado and "no se encontró" in resultado["mensaje"].lower():
         raise HTTPException(status_code=404, detail=resultado["mensaje"])
     return resultado
 
 
 @router.patch("/desvincular/{id_dispositivo}")
-async def desvincular_dispositivo(id_dispositivo: str):
-    resultado = await service_dispositivo.desvincular_dispositivo(id_dispositivo)
+async def desvincular_dispositivo(
+    id_dispositivo: str,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await service_dispositivo.desvincular_dispositivo(id_dispositivo, cuidador_actual["email"])
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=403, detail=resultado["error"])
     if "mensaje" in resultado and "no se encontró" in resultado["mensaje"].lower():
         raise HTTPException(status_code=404, detail=resultado["mensaje"])
     return resultado
 
 
-# --- Flujo de vinculación automática ---
-
 @router.get("/disponibles")
-async def obtener_dispositivos_disponibles():
+async def obtener_dispositivos_disponibles(
+    cuidador_actual = Depends(get_cuidador_actual)
+):
     resultado = await service_dispositivo.obtener_dispositivos_disponibles()
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
@@ -67,8 +75,22 @@ async def obtener_dispositivos_disponibles():
 
 
 @router.post("/vincular")
-async def vincular_dispositivo(id_dispositivo: str, paciente_id: str):
-    resultado = await service_dispositivo.vincular_dispositivo(id_dispositivo, paciente_id)
+async def vincular_dispositivo(
+    id_dispositivo: str,
+    paciente_id: str,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await service_dispositivo.vincular_dispositivo(id_dispositivo, paciente_id, cuidador_actual["email"])
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado
+
+
+# --- Endpoint público para ESP32 (sin auth) ---
+
+@router.post("/anunciar")
+async def anunciar_dispositivo(id_dispositivo: str):
+    resultado = await service_dispositivo.anunciar_dispositivo(id_dispositivo)
+    if "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return {"mensaje": "Dispositivo anunciado"}

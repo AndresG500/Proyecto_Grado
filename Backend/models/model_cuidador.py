@@ -1,25 +1,46 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
+import re
 
-class CuidadoBase(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100, description="Nombre del cuidado")
-    email: EmailStr = Field(..., description="Correo electrónico del cuidado")
-    phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$", description="Teléfono de contacto")
 
-class CrearCuidador(CuidadoBase):
-    password: str = Field(..., min_length=8, description="Contraseña del usuario")
+def sanitize_input(value: str) -> str:
+    if not value:
+        return value
+    value = value.strip()
+    value = re.sub(r'<[^>]*>', '', value)
+    return value
 
-class RespuestaCuidador(CuidadoBase):
-    id: str = Field(..., description="ObjectId de MongoDB serializado como string")
-    id_paciente: list[str] = Field(default_factory=list, description="IDs de los pacientes asignados")
-    fecha_creacion: datetime = Field(..., description="Fecha de creación del registro")
-    activo: bool = Field(True, description="Indica si la cuenta está activa")
+
+class CuidadorBase(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr = Field(...)
+    phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def sanitize_name(cls, v):
+        if isinstance(v, str):
+            return sanitize_input(v)
+        return v
+
+class CrearCuidador(CuidadorBase):
+    password: str = Field(..., min_length=8)
+
+class RespuestaCuidador(CuidadorBase):
+    id: str = Field(...)
+    grupo_ids: list[str] = Field(default_factory=list)
+    fecha_creacion: datetime = Field(...)
+    activo: bool = Field(True)
 
     class Config:
         from_attributes = True
 
 class ActualizarCuidador(BaseModel):
-    nombre: Optional[str] = Field(None, min_length=2, max_length=100)
-    telefono: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
-    password: Optional[str] = Field(None, min_length=8, description="Nueva contraseña en texto plano")
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+    password: Optional[str] = Field(None, min_length=8)
+
+class VerificarCuidador(BaseModel):
+    email: EmailStr = Field(...)
+    password: str = Field(...)

@@ -1,55 +1,63 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum
+import re
 
 class GeoPoint(BaseModel):
-    """Representa una coordenada geográfica."""
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
-    recorded_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de cuándo se registró esta ubicación")
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EstadoDispositivo(str, Enum):
-    """Estado de conexión del dispositivo ESP32."""
     ONLINE  = "online"
     OFFLINE = "offline"
     UNKNOWN = "unknown"
 
+def sanitize_input(value: str) -> str:
+    if not value:
+        return value
+    value = value.strip()
+    value = re.sub(r'<[^>]*>', '', value)
+    return value
+
 class PacienteBase(BaseModel):
-    nombre_paciente: str = Field(..., min_length=2, max_length=100, description="Nombre completo del paciente")
-    edad_paciente: Optional[int] = Field(None, ge=0, description="Edad del paciente")
-    enfermedad: Optional[str] = Field(None, max_length=500, description="Observaciones clínicas o personales del cuidador")
+    nombre_paciente: str = Field(..., min_length=2, max_length=100)
+    edad_paciente: Optional[int] = Field(None, ge=0)
+    enfermedad: Optional[str] = Field(None, max_length=500)
+
+    @field_validator('nombre_paciente', 'enfermedad', mode='before')
+    @classmethod
+    def sanitize_fields(cls, v):
+        if isinstance(v, str):
+            return sanitize_input(v)
+        return v
 
 class CrearPaciente(PacienteBase):
-    id_cuidador: str = Field(..., description="ObjectId del cuidador responsable")
-    id_dispositivo: Optional[str] = Field(None, description="Identificador único del ESP32 asignado (MAC address o UUID)")
+    id_dispositivo: Optional[str] = Field(None)
 
 class RespuestaPaciente(PacienteBase):
-    id_paciente: str = Field(..., description="ObjectId de MongoDB serializado como string")
-    id_cuidador: str = Field(..., description="ObjectId del cuidador responsable")
-    id_dispositivo: Optional[str] = Field(None, description="Identificador del ESP32 asignado")
-
-    ultima_ubicacion: Optional[GeoPoint] = Field(None, description="Última coordenada recibida del dispositivo")
-    ultima_señal: Optional[float] = Field(None, description="Último valor de señal recibido del dispositivo")
-
-    estado_dispositivo: Optional[EstadoDispositivo] = Field(None, description="Estado de conexión del dispositivo ESP32")
-
-    created_at: datetime = Field(..., description="Fecha de creación del registro")
-    activo: bool = Field(True, description="Indica si el paciente está activo")
+    id_paciente: str = Field(...)
+    id_cuidador: str = Field(...)
+    id_dispositivo: Optional[str] = Field(None)
+    grupo_ids: list[str] = Field(default_factory=list)
+    ultima_ubicacion: Optional[GeoPoint] = Field(None)
+    estado_dispositivo: Optional[EstadoDispositivo] = Field(None)
+    created_at: datetime = Field(...)
+    activo: bool = Field(True)
 
     class Config:
         from_attributes = True
 
-
 class ActualizarPaciente(BaseModel):
-    nombre_completo: Optional[str] = Field(None, min_length=2, max_length=100)
+    nombre_paciente: Optional[str] = Field(None, min_length=2, max_length=100)
     edad_paciente: Optional[int] = Field(None, ge=0)
     enfermedad: Optional[str] = Field(None, max_length=500)
-    id_dispositivo: Optional[str] = Field(None, description="Nuevo identificador del ESP32 asignado (MAC address o UUID)")
+    id_dispositivo: Optional[str] = Field(None)
 
-class ActaulizarUbicacion(BaseModel):
-    patient_id: str = Field(..., description="ObjectId del paciente al que se le actualizará la ubicación")
+class ActualizarUbicacion(BaseModel):
+    patient_id: str = Field(...)
     latitude: float = Field(..., ge=-90.0, le=90.0)
     longitude: float = Field(..., ge=-180.0, le=180.0)
-    device_id: Optional[str] = Field(None, description="Identificador del dispositivo que envía la ubicación")
-    recorded_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de cuándo se registró esta ubicación")
+    device_id: Optional[str] = Field(None)
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)

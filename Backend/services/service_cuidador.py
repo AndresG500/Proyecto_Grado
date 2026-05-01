@@ -1,13 +1,18 @@
-from database.database import conexion_database
+from database.database import get_database
 from models.model_cuidador import CrearCuidador, ActualizarCuidador
 from datetime import datetime
+import asyncio
 import bcrypt
 from utils.Logger import Logger
+from security.jwt_handler import crear_token
+
+BCRYPT_ROUNDS = 12
+AUTH_DELAY = 0.2
 
 
 async def registrar_cuidador(datos: CrearCuidador):
     try:
-        coleccion = conexion_database()["Cuidadores"]
+        coleccion = get_database()["Cuidadores"]
 
         if await coleccion.find_one({"email": datos.email}):
             Logger.add_to_log("warn", f"Correo ya registrado: {datos.email}")
@@ -17,16 +22,16 @@ async def registrar_cuidador(datos: CrearCuidador):
             Logger.add_to_log("warn", f"Teléfono ya registrado: {datos.phone}")
             return {"mensaje": "Este teléfono ya ha sido registrado"}
 
-        hashed = bcrypt.hashpw(datos.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        hashed = bcrypt.hashpw(datos.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
 
         await coleccion.insert_one({
-            "name":        datos.name,
-            "email":       datos.email,
-            "password":    hashed,
-            "phone":       datos.phone,
+            "name":    datos.name,
+            "email":   datos.email,
+            "password": hashed,
+            "phone":  datos.phone,
             "patient_ids": [],
-            "is_active":   True,
-            "created_at":  datetime.utcnow(),
+            "is_active": True,
+            "created_at": datetime.utcnow(),
         })
 
         Logger.add_to_log("info", f"Cuidador registrado")
@@ -37,9 +42,13 @@ async def registrar_cuidador(datos: CrearCuidador):
         return {"error": f"No se pudo registrar el cuidador: {ex}"}
 
 
-async def borrar_cuidador(email: str):
+async def borrar_cuidador(email: str, email_solicitante: str):
     try:
-        coleccion = conexion_database()["Cuidadores"]
+        if email != email_solicitante:
+            Logger.add_to_log("warn", f"Intento de eliminación no autorizado: {email_solicitante} tried to delete {email}")
+            return {"error": "No tienes permiso para eliminar esta cuenta"}
+
+        coleccion = get_database()["Cuidadores"]
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
@@ -55,9 +64,13 @@ async def borrar_cuidador(email: str):
         return {"error": f"No se pudo eliminar el cuidador: {ex}"}
 
 
-async def actualizar_cuidador(email: str, datos: ActualizarCuidador):
+async def actualizar_cuidador(email: str, datos: ActualizarCuidador, email_solicitante: str):
     try:
-        coleccion = conexion_database()["Cuidadores"]
+        if email != email_solicitante:
+            Logger.add_to_log("warn", f"Intento de actualización no autorizado: {email_solicitante} tried to update {email}")
+            return {"error": "No tienes permiso para actualizar esta cuenta"}
+
+        coleccion = get_database()["Cuidadores"]
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
@@ -71,7 +84,7 @@ async def actualizar_cuidador(email: str, datos: ActualizarCuidador):
             campos["phone"] = datos.phone
         if datos.password:
             campos["password"] = bcrypt.hashpw(
-                datos.password.encode("utf-8"), bcrypt.gensalt()
+                datos.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
             ).decode("utf-8")
 
         if not campos:
@@ -89,20 +102,29 @@ async def actualizar_cuidador(email: str, datos: ActualizarCuidador):
 
 async def verificar_cuidador(email: str, password: str):
     try:
-        coleccion = conexion_database()["Cuidadores"]
+        db = get_database()
+        coleccion = db["Cuidadores"]
         cuidador = await coleccion.find_one({"email": email})
+        dummy_hash = bcrypt.hashpw(b"dummy_password", bcrypt.gensalt(rounds=BCRYPT_ROUNDS))
+        stored_hash = cuidador["password"].encode("utf-8") if cuidador else dummy_hash
+
+        bcrypt.checkpw(password.encode("utf-8"), stored_hash)
+
+        await asyncio.sleep(AUTH_DELAY)
 
         if not cuidador:
             Logger.add_to_log("warn", f"Verificación fallida - cuidador no encontrado: {email}")
-            return {"mensaje": "Acceso denegado"}
+            return {"mensaje": "Credenciales inválidas"}
+        
+        token = crear_token({"sub": cuidador["email"]})
 
-        if bcrypt.checkpw(password.encode("utf-8"), cuidador["password"].encode("utf-8")):
-            Logger.add_to_log("info", f"Verificación exitosa: {email}")
-            return {"mensaje": "Acceso permitido"}
-
-        Logger.add_to_log("warn", f"Verificación fallida - contraseña incorrecta: {email}")
-        return {"mensaje": "Acceso denegado"}
+        Logger.add_to_log("info", f"Verificación exitosa: {email}")
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+        }
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al verificar cuidador: {ex}")
-        return {"error": f"No se pudo verificar el cuidador: {ex}"}
+        await asyncio.sleep(AUTH_DELAY)
+        return {"mensaje": "Credenciales inválidas"}
