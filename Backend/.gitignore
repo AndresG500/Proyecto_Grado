@@ -17,6 +17,7 @@ env/
 venv/
 ENV/
 .venv/
+.md
 
 # Logs
 /logs
