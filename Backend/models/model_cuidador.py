@@ -1,15 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
-import re
-
-
-def sanitize_input(value: str) -> str:
-    if not value:
-        return value
-    value = value.strip()
-    value = re.sub(r'<[^>]*>', '', value)
-    return value
+from utils.sanitizer import sanitize_string
 
 
 class CuidadorBase(BaseModel):
@@ -21,7 +13,7 @@ class CuidadorBase(BaseModel):
     @classmethod
     def sanitize_name(cls, v):
         if isinstance(v, str):
-            return sanitize_input(v)
+            return sanitize_string(v)
         return v
 
 class CrearCuidador(CuidadorBase):

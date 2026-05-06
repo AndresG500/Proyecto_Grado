@@ -1,6 +1,6 @@
 # routes/route_dispositivo.py
 from fastapi import APIRouter, HTTPException, Depends
-from models.model_dispositivo import CrearDispositivo, ActualizarDispositivo
+from models.model_dispositivo import CrearDispositivo, ActualizarDispositivo, VincularDispositivo
 from services import service_dispositivo
 from security.dependencies import get_cuidador_actual
 
@@ -76,11 +76,12 @@ async def obtener_dispositivos_disponibles(
 
 @router.post("/vincular")
 async def vincular_dispositivo(
-    id_dispositivo: str,
-    paciente_id: str,
+    datos: VincularDispositivo,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
-    resultado = await service_dispositivo.vincular_dispositivo(id_dispositivo, paciente_id, cuidador_actual["email"])
+    resultado = await service_dispositivo.vincular_dispositivo(
+        datos.id_dispositivo, datos.paciente_id, cuidador_actual["email"]
+    )
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado

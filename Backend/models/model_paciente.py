@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum
-import re
+from utils.sanitizer import sanitize_string
 
 class GeoPoint(BaseModel):
     latitud: float = Field(..., ge=-90.0, le=90.0)
@@ -14,13 +14,6 @@ class EstadoDispositivo(str, Enum):
     OFFLINE = "offline"
     UNKNOWN = "unknown"
 
-def sanitize_input(value: str) -> str:
-    if not value:
-        return value
-    value = value.strip()
-    value = re.sub(r'<[^>]*>', '', value)
-    return value
-
 class PacienteBase(BaseModel):
     nombre_paciente: str = Field(..., min_length=2, max_length=100)
     edad_paciente: Optional[int] = Field(None, ge=0)
@@ -30,7 +23,7 @@ class PacienteBase(BaseModel):
     @classmethod
     def sanitize_fields(cls, v):
         if isinstance(v, str):
-            return sanitize_input(v)
+            return sanitize_string(v)
         return v
 
 class CrearPaciente(PacienteBase):

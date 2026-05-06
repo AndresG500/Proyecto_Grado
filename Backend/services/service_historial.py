@@ -1,19 +1,12 @@
 from datetime import datetime, timedelta
-from math import radians, sin, cos, sqrt, atan2
 from database.database import get_database
 from models.model_historial import HistorialUbicacionBase
 from bson import ObjectId
 from utils.Logger import Logger
+from utils.geo import calcular_distancia
 
 DISTANCIA_MINIMA_METROS = 10
 DIAS_HISTORIAL = 7
-
-
-def calcular_distancia(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    R = 6371000
-    lat1, lat2, dlat, dlng = map(radians, [lat1, lat2, lat2 - lat1, lng2 - lng1])
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
 async def verificar_paciente_pertenece_a_cuidador(paciente_id: str, cuidador_email: str) -> bool:
@@ -56,7 +49,7 @@ async def registrar_ubicacion(datos: HistorialUbicacionBase):
             "paciente_id":   datos.paciente_id,
             "dispositivo_id": datos.dispositivo_id,
             "coordenadas":   datos.coordenadas.model_dump(),
-            "timestamp":     datetime.utcnow()
+            "timestamp":     datos.timestamp
         })
 
         await col_pacientes.update_one(

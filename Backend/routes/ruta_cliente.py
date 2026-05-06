@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models.model_cuidador import RespuestaCuidador, CrearCuidador, ActualizarCuidador, VerificarCuidador
 from services.service_cuidador import registrar_cuidador, borrar_cuidador, actualizar_cuidador, verificar_cuidador
-from security.dependencies import get_cuidador_actual
+from services.service_auth import revocar_token
+from security.dependencies import get_cuidador_actual, oauth2_scheme
+from security.jwt_handler import verificar_token
 
 router = APIRouter(prefix="/cuidadores", tags=["Cuidadores"])
 
@@ -41,6 +43,12 @@ async def verificar(datos: VerificarCuidador):
 
 
 @router.post("/logout")
-async def logout(cuidador_actual = Depends(get_cuidador_actual)):
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    cuidador_actual = Depends(get_cuidador_actual),
+):
+    datos = verificar_token(token)
+    if datos:
+        await revocar_token(datos.get("jti"), datos.get("exp"))
     return {"mensaje": "Sesión cerrada exitosamente"}
 

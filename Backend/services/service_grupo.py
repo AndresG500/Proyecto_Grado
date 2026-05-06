@@ -1,16 +1,9 @@
 from datetime import datetime
-from math import radians, sin, cos, sqrt, atan2
 from database.database import get_database
 from models.model_grupo import CrearGrupo, ActualizarGrupo, UbicacionCuidador
 from bson import ObjectId
 from utils.Logger import Logger
-
-
-def calcular_distancia(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    R = 6371000
-    lat1, lat2, dlat, dlng = map(radians, [lat1, lat2, lat2 - lat1, lng2 - lng1])
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+from utils.geo import calcular_distancia
 
 
 async def crear_grupo(datos: CrearGrupo):
@@ -26,12 +19,15 @@ async def crear_grupo(datos: CrearGrupo):
             Logger.add_to_log("warn", f"Cuidador principal no encontrado: {datos.cuidador_principal_id}")
             return {"mensaje": "No se encontró el cuidador principal"}
 
-        # Verificar que los pacientes existen
+        # Verificar que los pacientes existen y pertenecen al cuidador
         for paciente_id in datos.paciente_ids:
             paciente = await col_pacientes.find_one({"_id": ObjectId(paciente_id)})
             if not paciente:
                 Logger.add_to_log("warn", f"Paciente no encontrado: {paciente_id}")
                 return {"mensaje": f"No se encontró el paciente {paciente_id}"}
+            if str(paciente.get("id_cuidador")) != datos.cuidador_principal_id:
+                Logger.add_to_log("warn", f"Paciente {paciente_id} no pertenece al cuidador: {datos.cuidador_principal_id}")
+                return {"error": f"El paciente {paciente_id} no pertenece a tu cuenta"}
 
         resultado = await col_grupos.insert_one({
             "nombre":                datos.nombre,
@@ -81,9 +77,9 @@ async def eliminar_grupo(grupo_id: str, cuidador_id: str):
             return {"error": "No tienes permiso para eliminar este grupo"}
 
         # Desvincular grupo de todos los cuidadores
-        for cuidador_id in grupo["cuidador_ids"]:
+        for c_id in grupo["cuidador_ids"]:
             await col_cuidadores.update_one(
-                {"_id": ObjectId(cuidador_id)},
+                {"_id": ObjectId(c_id)},
                 {"$pull": {"grupo_ids": grupo_id}}
             )
 
@@ -104,7 +100,7 @@ async def eliminar_grupo(grupo_id: str, cuidador_id: str):
         return {"error": f"No se pudo eliminar el grupo: {ex}"}
 
 
-async def agregar_cuidador(grupo_id: str, cuidador_id: str):
+async def agregar_cuidador(grupo_id: str, cuidador_id: str, cuidador_solicitante_id: str):
     try:
         db             = get_database()
         col_grupos     = db["Grupos"]
@@ -114,6 +110,10 @@ async def agregar_cuidador(grupo_id: str, cuidador_id: str):
         if not grupo:
             Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
             return {"mensaje": "No se encontró el grupo"}
+
+        if str(grupo.get("cuidador_principal_id")) != cuidador_solicitante_id:
+            Logger.add_to_log("warn", f"Intento de agregar cuidador sin autorización: {cuidador_solicitante_id}")
+            return {"error": "No tienes permiso para agregar cuidadores a este grupo"}
 
         cuidador = await col_cuidadores.find_one({"_id": ObjectId(cuidador_id)})
         if not cuidador:
@@ -180,7 +180,7 @@ async def eliminar_cuidador(grupo_id: str, cuidador_id: str):
         return {"error": f"No se pudo eliminar el cuidador del grupo: {ex}"}
 
 
-async def agregar_paciente(grupo_id: str, paciente_id: str):
+async def agregar_paciente(grupo_id: str, paciente_id: str, cuidador_solicitante_id: str):
     try:
         db            = get_database()
         col_grupos    = db["Grupos"]
@@ -190,6 +190,10 @@ async def agregar_paciente(grupo_id: str, paciente_id: str):
         if not grupo:
             Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
             return {"mensaje": "No se encontró el grupo"}
+
+        if str(grupo.get("cuidador_principal_id")) != cuidador_solicitante_id:
+            Logger.add_to_log("warn", f"Intento de agregar paciente sin autorización: {cuidador_solicitante_id}")
+            return {"error": "No tienes permiso para agregar pacientes a este grupo"}
 
         paciente = await col_pacientes.find_one({"_id": ObjectId(paciente_id)})
         if not paciente:
@@ -242,7 +246,7 @@ async def guardar_ubicacion_cuidador(datos: UbicacionCuidador):
         return {"error": f"No se pudo guardar la ubicación: {ex}"}
 
 
-async def obtener_ubicaciones_grupo(grupo_id: str):
+async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str):
     try:
         db              = get_database()
         col_grupos      = db["Grupos"]
@@ -253,6 +257,10 @@ async def obtener_ubicaciones_grupo(grupo_id: str):
         if not grupo:
             Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
             return {"mensaje": "No se encontró el grupo"}
+
+        if cuidador_solicitante_id not in grupo.get("cuidador_ids", []):
+            Logger.add_to_log("warn", f"Cuidador {cuidador_solicitante_id} no pertenece al grupo {grupo_id}")
+            return {"error": "No tienes permiso para ver las ubicaciones de este grupo"}
 
         # Ubicaciones de cuidadores
         ubicaciones_cuidadores = []
@@ -282,7 +290,7 @@ async def obtener_ubicaciones_grupo(grupo_id: str):
         return {"error": f"No se pudieron obtener las ubicaciones: {ex}"}
 
 
-async def obtener_cuidador_mas_cercano(grupo_id: str, latitud_paciente: float, longitud_paciente: float):
+async def obtener_cuidador_mas_cercano(grupo_id: str, latitud_paciente: float, longitud_paciente: float, cuidador_solicitante_id: str):
     try:
         db              = get_database()
         col_grupos      = db["Grupos"]
@@ -293,6 +301,10 @@ async def obtener_cuidador_mas_cercano(grupo_id: str, latitud_paciente: float, l
         if not grupo:
             Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
             return {"mensaje": "No se encontró el grupo"}
+
+        if cuidador_solicitante_id not in grupo.get("cuidador_ids", []):
+            Logger.add_to_log("warn", f"Cuidador {cuidador_solicitante_id} no pertenece al grupo {grupo_id}")
+            return {"error": "No tienes permiso para ver este grupo"}
 
         mas_cercano  = None
         min_distancia = float("inf")
@@ -311,6 +323,9 @@ async def obtener_cuidador_mas_cercano(grupo_id: str, latitud_paciente: float, l
             return {"mensaje": "No hay ubicaciones disponibles de los cuidadores"}
 
         cuidador = await col_cuidadores.find_one({"_id": ObjectId(mas_cercano)})
+        if not cuidador:
+            Logger.add_to_log("warn", f"Cuidador no encontrado: {mas_cercano}")
+            return {"mensaje": "El cuidador más cercano ya no existe"}
 
         Logger.add_to_log("info", f"Cuidador más cercano: {mas_cercano}")
         return {

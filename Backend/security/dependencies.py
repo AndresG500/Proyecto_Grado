@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from security.jwt_handler import verificar_token
+from services.service_auth import token_revocado
 from database.database import get_database
 
 # ─── Configuración ───────────────────────────────────────────────────────────
@@ -15,16 +16,20 @@ async def get_cuidador_actual(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # 1. Verificar token
+    # 1. Verificar firma y vencimiento del token
     token_data = verificar_token(token)
     if token_data is None:
         raise credenciales_exception
 
-    # 2. Buscar cuidador en la base de datos
+    # 2. Verificar que el token no haya sido revocado (logout)
+    if await token_revocado(token_data.get("jti")):
+        raise credenciales_exception
+
+    # 3. Buscar cuidador en la base de datos
     db = get_database()
     cuidador = await db["Cuidadores"].find_one(
         {"email": token_data["email"]},
-        {"password": 0}  # nunca retornar el hash
+        {"password": 0}
     )
 
     if cuidador is None:

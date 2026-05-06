@@ -1,9 +1,11 @@
 # routes/route_historial_ubicacion.py
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Annotated
+from fastapi import APIRouter, HTTPException, Depends, Path
 from models.model_historial import HistorialUbicacionBase
 from services.service_historial import registrar_ubicacion, obtener_ultima_ubicacion, obtener_historial_ubicaciones, eliminar_historial_paciente
 from security.dependencies import get_cuidador_actual
 
+MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 router = APIRouter(prefix="/historial-ubicaciones", tags=["Historial de Ubicaciones"])
 
 
@@ -21,7 +23,7 @@ async def registrar(datos: HistorialUbicacionBase):
 
 @router.get("/ultima/{paciente_id}")
 async def obtener_ubicacion(
-    paciente_id: str,
+    paciente_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await obtener_ultima_ubicacion(paciente_id, cuidador_actual["email"])
@@ -34,7 +36,7 @@ async def obtener_ubicacion(
 
 @router.get("/ruta/{paciente_id}")
 async def obtener_historial(
-    paciente_id: str,
+    paciente_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await obtener_historial_ubicaciones(paciente_id, cuidador_actual["email"])
@@ -47,7 +49,7 @@ async def obtener_historial(
 
 @router.delete("/eliminar/{paciente_id}")
 async def eliminar_historial(
-    paciente_id: str,
+    paciente_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await eliminar_historial_paciente(paciente_id, cuidador_actual["email"])

@@ -27,6 +27,10 @@ class DispositivoDisponible(BaseModel):
     id_dispositivo: str
     dispositivo_detectado: datetime = Field(default_factory=datetime.utcnow)
 
+class VincularDispositivo(BaseModel):
+    id_dispositivo: str
+    paciente_id: str
+
 class RegistroDispositivoBase(BaseModel):
     id: Optional[str] = Field(None, alias="_id")  # _id de MongoDB
     id_dispositivo: str

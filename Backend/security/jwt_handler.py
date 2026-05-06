@@ -1,3 +1,4 @@
+import uuid
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -7,7 +8,12 @@ import os
 load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+_expire_str = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
+
+if not SECRET_KEY or not ALGORITHM or not _expire_str:
+    raise ValueError("Variables de entorno JWT requeridas: SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES")
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(_expire_str)
 
 
 # ─── Crear token ─────────────────────────────────────────────────────────────
@@ -19,7 +25,10 @@ def crear_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
         else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
-    payload.update({"exp": expire})
+    payload.update({
+        "exp": expire,
+        "jti": str(uuid.uuid4()),
+    })
 
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -34,7 +43,11 @@ def verificar_token(token: str) -> Optional[dict]:
         if email is None:
             return None
 
-        return {"email": email}
+        return {
+            "email": email,
+            "jti": payload.get("jti"),
+            "exp": payload.get("exp"),
+        }
 
     except JWTError:
         return None

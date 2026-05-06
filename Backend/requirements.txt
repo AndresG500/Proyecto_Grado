@@ -39,3 +39,5 @@ uvicorn==0.46.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==16.0
+aiomqtt>=2.0.0
+pydantic-settings>=2.0.0

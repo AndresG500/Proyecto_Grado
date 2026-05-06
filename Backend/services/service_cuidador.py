@@ -30,8 +30,8 @@ async def registrar_cuidador(datos: CrearCuidador):
             "password": hashed,
             "phone":  datos.phone,
             "patient_ids": [],
-            "is_active": True,
-            "created_at": datetime.utcnow(),
+            "activo": True,
+            "fecha_creacion": datetime.utcnow(),
         })
 
         Logger.add_to_log("info", f"Cuidador registrado")
@@ -108,14 +108,18 @@ async def verificar_cuidador(email: str, password: str):
         dummy_hash = bcrypt.hashpw(b"dummy_password", bcrypt.gensalt(rounds=BCRYPT_ROUNDS))
         stored_hash = cuidador["password"].encode("utf-8") if cuidador else dummy_hash
 
-        bcrypt.checkpw(password.encode("utf-8"), stored_hash)
+        es_valida = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
 
         await asyncio.sleep(AUTH_DELAY)
 
-        if not cuidador:
-            Logger.add_to_log("warn", f"Verificación fallida - cuidador no encontrado: {email}")
+        if not cuidador or not es_valida:
+            Logger.add_to_log("warn", f"Verificación fallida: {email}")
             return {"mensaje": "Credenciales inválidas"}
-        
+
+        if not cuidador.get("is_active", True):
+            Logger.add_to_log("warn", f"Intento de login en cuenta inactiva: {email}")
+            return {"mensaje": "Credenciales inválidas"}
+
         token = crear_token({"sub": cuidador["email"]})
 
         Logger.add_to_log("info", f"Verificación exitosa: {email}")

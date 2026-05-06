@@ -11,7 +11,7 @@ class ZonaSeguraBase(BaseModel):
     cuidador_id: str = Field(..., description="ID del cuidador que creó la zona")
     nombre: str = Field(..., min_length=2, max_length=100, description="Nombre de la zona segura")
     centro: CentroZona = Field(..., description="Coordenadas del centro de la zona")
-    radio_metros: float = Field(..., ge=50, le=5000, description="Radio de la zona en metros")
+    radio_metros: float = Field(..., ge=50, le=500, description="Radio de la zona en metros")
     activa: bool = Field(True, description="Indica si la zona está activa")
 
 class CrearZonaSegura(ZonaSeguraBase):

@@ -161,6 +161,7 @@ async def anunciar_dispositivo(id_dispositivo: str):
             upsert=True
         )
         Logger.add_to_log("info", f"Dispositivo anunciado: {id_dispositivo}")
+        return {"mensaje": "Dispositivo anunciado exitosamente"}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al anunciar dispositivo: {ex}")

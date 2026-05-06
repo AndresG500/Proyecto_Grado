@@ -120,11 +120,12 @@ async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura, cuid
             Logger.add_to_log("warn", f"Zona no encontrada para actualizar: {zona_id}")
             return {"mensaje": "No se encontró la zona segura"}
 
-        if zona.get("cuidador_id"):
-            cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
-            if cuidador and str(zona["cuidador_id"]) != str(cuidador["_id"]):
-                Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs zona {zona_id}")
-                return {"error": "No tienes permiso para actualizar esta zona"}
+        cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+        if not zona.get("cuidador_id") or str(zona["cuidador_id"]) != str(cuidador["_id"]):
+            Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs zona {zona_id}")
+            return {"error": "No tienes permiso para actualizar esta zona"}
 
         campos = {}
         if datos.nombre is not None:
@@ -157,11 +158,12 @@ async def eliminar_zona_segura(zona_id: str, cuidador_email: str):
             Logger.add_to_log("warn", f"Zona no encontrada para eliminar: {zona_id}")
             return {"mensaje": "No se encontró la zona segura"}
 
-        if zona.get("cuidador_id"):
-            cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
-            if cuidador and str(zona["cuidador_id"]) != str(cuidador["_id"]):
-                Logger.add_to_log("warn", f"Eliminación no autorizada: {cuidador_email} vs zona {zona_id}")
-                return {"error": "No tienes permiso para eliminar esta zona"}
+        cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+        if not zona.get("cuidador_id") or str(zona["cuidador_id"]) != str(cuidador["_id"]):
+            Logger.add_to_log("warn", f"Eliminación no autorizada: {cuidador_email} vs zona {zona_id}")
+            return {"error": "No tienes permiso para eliminar esta zona"}
 
         await coleccion.delete_one({"_id": ObjectId(zona_id)})
 
