@@ -18,6 +18,8 @@ class PacienteBase(BaseModel):
     nombre_paciente: str = Field(..., min_length=2, max_length=100)
     edad_paciente: Optional[int] = Field(None, ge=0)
     enfermedad: Optional[str] = Field(None, max_length=500)
+    fuera_de_zona: bool = False
+    ultima_alerta_timestamp: Optional[datetime] = None
 
     @field_validator('nombre_paciente', 'enfermedad', mode='before')
     @classmethod

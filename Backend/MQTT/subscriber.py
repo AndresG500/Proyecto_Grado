@@ -1,31 +1,13 @@
-"""
-Subscriber MQTT — UbiLife.
-
-Escucha el tópico `ubilife/dispositivo/+/gps` en HiveMQ Cloud.
-Cada mensaje recibido se parsea como JSON y se procesa así:
-
-  1. Se extrae el id_dispositivo desde el tópico.
-  2. Se busca el dispositivo en la colección Dispositivos para obtener
-     el paciente asignado.
-  3. Se delega a service_historial.registrar_ubicacion, que aplica el
-     filtro de distancia mínima, inserta en Historial y actualiza
-     ultima_ubicacion del paciente.
-
-Esta tarea corre como background task en el lifespan de FastAPI y se
-reconecta automáticamente si pierde la conexión.
-"""
-
 import asyncio
 import json
 import ssl
-
 import aiomqtt
-
 from MQTT.config import settings
 from database.database import get_database
 from models.model_historial import HistorialUbicacionBase, CoordenadasPaciente
 from services.service_historial import registrar_ubicacion
 from utils.Logger import Logger
+from services.service_alerta import evaluar_zonas_seguras
 
 TOPIC_PATRON = "ubilife/dispositivo/+/gps"
 
@@ -62,6 +44,11 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
     resultado = await registrar_ubicacion(datos)
     if isinstance(resultado, dict) and "error" in resultado:
         Logger.add_to_log("error", f"Fallo registrando ubicación MQTT: {resultado['error']}")
+    if not (isinstance(resultado, dict) and "error" in resultado):
+        try:
+            await evaluar_zonas_seguras(str(paciente_id), float(lat), float(lng))
+        except Exception as ex:
+            Logger.add_to_log("error", f"Error evaluando zonas seguras: {ex}")
     else:
         Logger.add_to_log(
             "info",

@@ -132,3 +132,18 @@ async def verificar_cuidador(email: str, password: str):
         Logger.add_to_log("error", f"Error al verificar cuidador: {ex}")
         await asyncio.sleep(AUTH_DELAY)
         return {"mensaje": "Credenciales inválidas"}
+
+async def actualizar_fcm(email: str, fcm_token: str):
+    try:
+        coleccion = get_database()["Cuidadores"]
+        resultado = await coleccion.update_one(
+            {"email": email},
+            {"$set": {"fcm_token": fcm_token}}
+        )
+        if resultado.matched_count == 0:
+            return {"error": "Cuidador no encontrado"}
+        Logger.add_to_log("info", f"FCM token actualizado para: {email}")
+        return {"mensaje": "Token FCM actualizado exitosamente"}
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al actualizar FCM token: {ex}")
+        return {"error": f"No se pudo actualizar el token: {ex}"}

@@ -8,6 +8,7 @@ class CuidadorBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr = Field(...)
     phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+    fcm_token: Optional[str] = None
 
     @field_validator('name', mode='before')
     @classmethod

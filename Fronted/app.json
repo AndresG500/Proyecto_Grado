@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "front",
-    "slug": "front",
+    "slug": "ubilife",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -43,6 +43,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2990b712-214e-4329-9b1a-fbf93a2f2b69"
+      }
+    },
+    "owner": "andresga500s-organization"
   }
 }
