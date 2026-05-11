@@ -8,6 +8,8 @@ from models.model_historial import HistorialUbicacionBase, CoordenadasPaciente
 from services.service_historial import registrar_ubicacion
 from utils.Logger import Logger
 from services.service_alerta import evaluar_zonas_seguras
+from utils.eventos import bus_eventos
+from datetime import datetime, timezone
 
 TOPIC_PATRON = "ubilife/dispositivo/+/gps"
 
@@ -23,8 +25,17 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
     db = get_database()
     dispositivo = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
     if not dispositivo:
-        Logger.add_to_log("warn", f"Dispositivo no registrado: {id_dispositivo}")
-        return
+        await db["Dispositivos"].insert_one({
+            "id_dispositivo":      id_dispositivo,
+            "paciente_id":          None,
+            "estado":               True,
+            "ultima_localizacion":  None,
+            "ultima_conexion":      datetime.utcnow(),
+            "nivel_bateria":        None,
+            "created_at":           datetime.utcnow()
+        })
+        Logger.add_to_log("info", f"Dispositivo auto-registrado: {id_dispositivo}")
+        dispositivo = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
 
     paciente_id = dispositivo.get("paciente_id")
     if not paciente_id:
@@ -42,19 +53,29 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         return
 
     resultado = await registrar_ubicacion(datos)
+
     if isinstance(resultado, dict) and "error" in resultado:
         Logger.add_to_log("error", f"Fallo registrando ubicación MQTT: {resultado['error']}")
-    if not (isinstance(resultado, dict) and "error" in resultado):
-        try:
-            await evaluar_zonas_seguras(str(paciente_id), float(lat), float(lng))
-        except Exception as ex:
-            Logger.add_to_log("error", f"Error evaluando zonas seguras: {ex}")
-    else:
-        Logger.add_to_log(
-            "info",
-            f"GPS guardado | dispositivo={id_dispositivo} paciente={paciente_id} lat={lat} lng={lng}",
-        )
+        return  # ← detener aquí, nada más que hacer
+    
+    Logger.add_to_log(
+        "info",
+        f"GPS guardado | dispositivo={id_dispositivo} paciente={paciente_id} lat={lat} lng={lng}",
+    )
 
+    try:
+        await evaluar_zonas_seguras(str(paciente_id), float(lat), float(lng))
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error evaluando zonas seguras: {ex}")
+
+    await bus_eventos.publicar(
+        topic=f"ubicacion/{paciente_id}",
+        datos={
+            "lat": lat,
+            "lng": lng,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 async def manejar_mensaje(message: aiomqtt.Message) -> None:
     topic = message.topic.value

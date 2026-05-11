@@ -69,8 +69,6 @@ async def obtener_dispositivos_disponibles(
     resultado = await service_dispositivo.obtener_dispositivos_disponibles()
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
-    if not resultado:
-        raise HTTPException(status_code=404, detail="No hay dispositivos disponibles")
     return resultado
 
 
@@ -95,3 +93,10 @@ async def anunciar_dispositivo(id_dispositivo: str):
     if "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
     return {"mensaje": "Dispositivo anunciado"}
+
+@router.post("/registrar")
+async def registrar_dispositivo(id_dispositivo: str):
+    resultado = await service_dispositivo.registrar_dispositivo(id_dispositivo)
+    if "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado

@@ -35,7 +35,7 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
         )
 
         Logger.add_to_log("info", f"Paciente registrado: {datos.nombre_paciente}")
-        return {"mensaje": "Paciente registrado exitosamente"}
+        return {"mensaje": "Paciente registrado exitosamente", "id_paciente": str(resultado.inserted_id)}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al registrar paciente: {ex}")

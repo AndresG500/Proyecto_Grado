@@ -40,7 +40,7 @@ async def perfil(cuidador_actual = Depends(get_cuidador_actual)):
 async def verificar(datos: VerificarCuidador):
     resultado = await verificar_cuidador(datos.email, datos.password)
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=401, detail=resultado["error"])
     return resultado
 
 

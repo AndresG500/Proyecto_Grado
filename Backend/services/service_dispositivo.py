@@ -33,6 +33,32 @@ async def registrar_dispositivo(datos: CrearDispositivo):
         return {"error": f"No se pudo registrar el dispositivo: {ex}"}
 
 
+async def registrar_dispositivo(id_dispositivo: str):
+    try:
+        db = get_database()
+        coleccion = db["Dispositivos"]
+        existente = await coleccion.find_one({"id_dispositivo": id_dispositivo})
+        if existente:
+            Logger.add_to_log("warn", f"Dispositivo ya registrado: {id_dispositivo}")
+            return {"mensaje": "Dispositivo ya registrado", "id_dispositivo": id_dispositivo}
+
+        await coleccion.insert_one({
+            "id_dispositivo":      id_dispositivo,
+            "paciente_id":          None,
+            "estado":               True,
+            "ultima_localizacion":  None,
+            "ultima_conexion":      datetime.utcnow(),
+            "nivel_bateria":        None,
+            "created_at":           datetime.utcnow()
+        })
+        Logger.add_to_log("info", f"Dispositivo registrado: {id_dispositivo}")
+        return {"mensaje": "Dispositivo registrado exitosamente", "id_dispositivo": id_dispositivo}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al registrar dispositivo: {ex}")
+        return {"error": f"No se pudo registrar el dispositivo: {ex}"}
+
+
 async def obtener_dispositivo(id_dispositivo: str):
     try:
         coleccion = get_database()["Dispositivos"]
@@ -133,6 +159,11 @@ async def desvincular_dispositivo(id_dispositivo: str, cuidador_email: str):
                 Logger.add_to_log("warn", f"Desvinculación no autorizada: {cuidador_email} vs dispositivo {id_dispositivo}")
                 return {"error": "No tienes permiso para desvincular este dispositivo"}
 
+            await coleccion_pacientes.update_one(
+                {"_id": ObjectId(dispositivo["paciente_id"])},
+                {"$set": {"id_dispositivo": None}}
+            )
+
         await coleccion.update_one(
             {"id_dispositivo": id_dispositivo},
             {"$set": {
@@ -172,23 +203,37 @@ async def obtener_dispositivos_disponibles() -> list:
     try:
         db              = get_database()
         disponibles_col = db["DispositivosDisponibles"]
-        registrados_col = db["Dispositivos"]
+        dispositivos_col = db["Dispositivos"]
 
-        ids_registrados = await registrados_col.distinct(
+        ids_ya_vinculados = await dispositivos_col.distinct(
             "id_dispositivo", {"paciente_id": {"$ne": None}}
         )
 
+        ids_en_disponibles = await disponibles_col.distinct("id_dispositivo")
+
         corte = datetime.utcnow() - timedelta(minutes=MINUTOS_DISPONIBLE)
 
-        cursor = disponibles_col.find({
+        cursor1 = disponibles_col.find({
             "dispositivo_detectado": {"$gte": corte},
-            "id_dispositivo":        {"$nin": ids_registrados}
+            "id_dispositivo":        {"$nin": ids_ya_vinculados}
         })
 
-        return [
+        disponibles = [
             {"id_dispositivo": d["id_dispositivo"], "dispositivo_detectado": d["dispositivo_detectado"]}
-            async for d in cursor
+            async for d in cursor1
         ]
+
+        ids_disponibles_set = set(ids_en_disponibles)
+        cursor2 = dispositivos_col.find({
+            "paciente_id": None,
+            "id_dispositivo": {"$nin": list(ids_disponibles_set)}
+        })
+
+        async for d in cursor2:
+            disponibles.append({"id_dispositivo": d["id_dispositivo"], "dispositivo_detectado": None})
+
+        Logger.add_to_log("info", f"Dispositivos disponibles encontrados: {len(disponibles)}")
+        return disponibles
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al obtener dispositivos disponibles: {ex}")
@@ -217,8 +262,12 @@ async def vincular_dispositivo(id_dispositivo: str, paciente_id: str, cuidador_e
 
         encontrado = await disponibles_col.find_one({"id_dispositivo": id_dispositivo})
         if not encontrado:
-            Logger.add_to_log("warn", f"Dispositivo no disponible: {id_dispositivo}")
-            return {"error": "Dispositivo no disponible o no detectado recientemente"}
+            existente = await dispositivos_col.find_one({"id_dispositivo": id_dispositivo})
+            if existente and existente.get("paciente_id") is None:
+                pass
+            else:
+                Logger.add_to_log("warn", f"Dispositivo no disponible: {id_dispositivo}")
+                return {"error": "Dispositivo no disponible o no detectado recientemente"}
 
         existente = await dispositivos_col.find_one({
             "id_dispositivo": id_dispositivo,
@@ -254,6 +303,11 @@ async def vincular_dispositivo(id_dispositivo: str, paciente_id: str, cuidador_e
             })
 
         await disponibles_col.delete_one({"id_dispositivo": id_dispositivo})
+
+        await pacientes_col.update_one(
+            {"_id": ObjectId(paciente_id)},
+            {"$set": {"id_dispositivo": id_dispositivo}}
+        )
 
         Logger.add_to_log("info", f"Dispositivo {id_dispositivo} vinculado a paciente {paciente_id}")
         return {"mensaje": f"Dispositivo {id_dispositivo} vinculado al paciente exitosamente"}
