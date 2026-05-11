@@ -1,23 +1,29 @@
 {
   "expo": {
-    "name": "front",
-    "slug": "ubilife",
+    "name": "UbiLife",
+    "slug": "UbiLife",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "front",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+"icon": "./assets/images/Logo.png",
+      "scheme": "front",
+      "userInterfaceStyle": "automatic",
+      "newArchEnabled": true,
+      "ios": {
+        "supportsTablet": true,
+        "package": "com.andresga500.ubilife"
       },
+      "notifications": {
+        "icon": "./assets/images/Logo.png",
+        "color": "#E6F4FE",
+        "androidMode": "default",
+        "androidCollapsedTitle": "New notification"
+      },
+      "android": {
+        "adaptiveIcon": {
+          "backgroundColor": "#E6F4FE",
+          "foregroundImage": "./assets/images/Logo.png",
+          "package": "com.andresga500.ubilife"
+        },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -28,6 +34,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "UbiLife necesita tu ubicación para mostrarte en el mapa junto al paciente."
+        }
+        ],
+        [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
@@ -38,7 +50,7 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+        ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -47,9 +59,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "2990b712-214e-4329-9b1a-fbf93a2f2b69"
+        "projectId": "93fbe208-0347-47c4-ab70-943f62e1e27e"
       }
     },
-    "owner": "andresga500s-organization"
+    "owner": "andresga500"
   }
 }
