@@ -1,8 +1,14 @@
 from database.database import conexion_database
 from models.model_cuidador import CrearCuidador, ActualizarCuidador
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import bcrypt
+import os
+from jose import jwt
 from utils.Logger import Logger
+
+SECRET_KEY = os.getenv("JWT_SECRET", "ubilife_dev_secret_cambia_en_produccion")
+ALGORITHM  = "HS256"
+EXPIRE_HORAS = 24
 
 
 async def registrar_cuidador(datos: CrearCuidador):
@@ -11,11 +17,11 @@ async def registrar_cuidador(datos: CrearCuidador):
 
         if await coleccion.find_one({"email": datos.email}):
             Logger.add_to_log("warn", f"Correo ya registrado: {datos.email}")
-            return {"mensaje": "Este correo ya ha sido registrado"}
+            return {"duplicado": "Este correo ya ha sido registrado"}
 
         if datos.phone and await coleccion.find_one({"phone": datos.phone}):
             Logger.add_to_log("warn", f"Teléfono ya registrado: {datos.phone}")
-            return {"mensaje": "Este teléfono ya ha sido registrado"}
+            return {"duplicado": "Este teléfono ya ha sido registrado"}
 
         hashed = bcrypt.hashpw(datos.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -26,10 +32,10 @@ async def registrar_cuidador(datos: CrearCuidador):
             "phone":       datos.phone,
             "patient_ids": [],
             "is_active":   True,
-            "created_at":  datetime.utcnow(),
+            "created_at":  datetime.now(timezone.utc),
         })
 
-        Logger.add_to_log("info", f"Cuidador registrado")
+        Logger.add_to_log("info", f"Cuidador registrado: {datos.email}")
         return {"mensaje": "Cuidador registrado exitosamente"}
 
     except Exception as ex:
@@ -65,17 +71,16 @@ async def actualizar_cuidador(email: str, datos: ActualizarCuidador):
             return {"mensaje": "No se encontró la cuenta"}
 
         campos = {}
-        if datos.name:
-            campos["name"] = datos.name
-        if datos.phone:
-            campos["phone"] = datos.phone
+        if datos.nombre:
+            campos["name"] = datos.nombre
+        if datos.telefono:
+            campos["phone"] = datos.telefono
         if datos.password:
             campos["password"] = bcrypt.hashpw(
                 datos.password.encode("utf-8"), bcrypt.gensalt()
             ).decode("utf-8")
 
         if not campos:
-            Logger.add_to_log("warn", f"No se enviaron campos para actualizar: {email}")
             return {"mensaje": "No se enviaron campos para actualizar"}
 
         await coleccion.update_one({"email": email}, {"$set": campos})
@@ -93,15 +98,29 @@ async def verificar_cuidador(email: str, password: str):
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
-            Logger.add_to_log("warn", f"Verificación fallida - cuidador no encontrado: {email}")
-            return {"mensaje": "Acceso denegado"}
+            Logger.add_to_log("warn", f"Verificación fallida - no encontrado: {email}")
+            return {"error": "Credenciales inválidas"}
 
-        if bcrypt.checkpw(password.encode("utf-8"), cuidador["password"].encode("utf-8")):
-            Logger.add_to_log("info", f"Verificación exitosa: {email}")
-            return {"mensaje": "Acceso permitido"}
+        if not bcrypt.checkpw(password.encode("utf-8"), cuidador["password"].encode("utf-8")):
+            Logger.add_to_log("warn", f"Verificación fallida - contraseña incorrecta: {email}")
+            return {"error": "Credenciales inválidas"}
 
-        Logger.add_to_log("warn", f"Verificación fallida - contraseña incorrecta: {email}")
-        return {"mensaje": "Acceso denegado"}
+        expiracion = datetime.now(timezone.utc) + timedelta(hours=EXPIRE_HORAS)
+        token = jwt.encode(
+            {"sub": email, "exp": expiracion},
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+
+        Logger.add_to_log("info", f"Login exitoso: {email}")
+        return {
+            "token": token,
+            "cuidador": {
+                "name":  cuidador.get("name", ""),
+                "email": cuidador.get("email", ""),
+                "phone": cuidador.get("phone", ""),
+            },
+        }
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al verificar cuidador: {ex}")

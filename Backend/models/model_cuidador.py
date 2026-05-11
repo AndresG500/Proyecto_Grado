@@ -2,6 +2,10 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime
 
+class LoginCuidador(BaseModel):
+    email: EmailStr
+    password: str
+
 class CuidadoBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100, description="Nombre del cuidado")
     email: EmailStr = Field(..., description="Correo electrónico del cuidado")
