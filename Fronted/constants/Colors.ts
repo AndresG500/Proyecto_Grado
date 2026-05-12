@@ -1,6 +1,6 @@
 export const Colors = {
   // Azul principal
-  primary:      '#2563EB',
+  primary:      '#8CA9FF',
   primaryDark:  '#1D4ED8',
   primaryDeep:  '#1E3A8A',
   primaryMid:   '#3B82F6',

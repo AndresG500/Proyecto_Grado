@@ -5,6 +5,7 @@ import {
   localListarPacientes, localRegistrarPaciente,
   localListarAlertas, localResolverAlerta,
   localListarZonas, localCrearZona, localEliminarZona, localToggleZona,
+  localRegisterFamiliar, localLoginFamiliar,
 } from './localDb'
 
 const BASE_URL = 'http://10.0.2.2:8000'
@@ -18,7 +19,7 @@ api.interceptors.request.use(async (config) => {
 })
 
 const esErrorDeRed = (err: any) =>
-  !err.response || err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK'
+  !err.response || err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK' || err.code === 'ECONNREFUSED'
 
 // ── Cuidador ──────────────────────────────────────────────────────────────
 
@@ -36,17 +37,42 @@ export const cuidadorService = {
     try {
       return await api.post('/cuidadores/verificar', { email, password })
     } catch (err: any) {
-      if (esErrorDeRed(err)) {
-        const result = await localLogin(email, password)
-        if (!result) throw { response: { data: { detail: 'Credenciales inválidas. Intenta de nuevo.' } } }
-        return { data: result }
-      }
+      console.log('Error en login:', err)
+      const result = await localLogin(email, password)
+      if (!result) throw { response: { data: { detail: 'Credenciales inválidas. Intenta de nuevo.' } } }
+      return { data: result }
+    }
+  },
+
+  generarCodigoGrupo: () => api.post('/cuidadores/generar-codigo-grupo'),
+  perfil: () => api.get('/cuidadores/perfil'),
+  logout: () => api.post('/cuidadores/logout').catch(() => {}),
+}
+
+// ── Familiares ─────────────────────────────────────────────────────────────
+
+export const familiarService = {
+  registrar: async (datos: { name: string; email: string; password: string; phone?: string; codigo_grupo?: string }) => {
+    try {
+      return await api.post('/familiares/registrar', datos)
+    } catch (err: any) {
+      if (esErrorDeRed(err)) return { data: await localRegisterFamiliar(datos) }
       throw err
     }
   },
 
-  perfil: () => api.get('/cuidadores/perfil'),
-  logout: () => api.post('/cuidadores/logout').catch(() => {}),
+  login: async (email: string, password: string) => {
+    try {
+      return await api.post('/familiares/verificar', { email, password })
+    } catch (err: any) {
+      console.log('Error en login familiar:', err)
+      const result = await localLogin(email, password)
+      if (!result) throw { response: { data: { detail: 'Credenciales inválidas. Intenta de nuevo.' } } }
+      return { data: result }
+    }
+  },
+
+  misGrupos: () => api.get('/familiares/grupos'),
 }
 
 // ── Pacientes ─────────────────────────────────────────────────────────────
@@ -61,9 +87,9 @@ export const pacienteService = {
     }
   },
 
-  registrar: async (datos: { name: string; edad: number; diagnostico?: string }) => {
+  registrar: async (datos: { nombre_paciente: string; edad_paciente: number; enfermedad?: string; id_cuidador: string; id_dispositivo?: string }) => {
     try {
-      return await api.post('/pacientes/', datos)
+      return await api.post('/pacientes/registrar', datos)
     } catch (err: any) {
       if (esErrorDeRed(err)) return { data: await localRegistrarPaciente(datos) }
       throw err
@@ -71,6 +97,8 @@ export const pacienteService = {
   },
 
   obtener:         (id: string) => api.get(`/pacientes/${id}`),
+  actualizar:       (id: string, datos: any) => api.put(`/pacientes/${id}`, datos),
+  guardarUbicacion: (datos: { patient_id: string; latitude: number; longitude: number; device_id?: string }) => api.post('/pacientes/ubicacion', datos),
   ultimaUbicacion: (id: string) => api.get(`/historial-ubicaciones/ultima/${id}`),
   ruta:            (id: string) => api.get(`/historial-ubicaciones/ruta/${id}`),
 }

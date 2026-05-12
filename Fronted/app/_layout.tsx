@@ -12,7 +12,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (loading) return
     const inApp = segments[0] === '(app)'
     if (!token && inApp)  router.replace('/login')
-    if (token  && !inApp) router.replace('/(app)/')
+    if (token  && !inApp) router.replace('/')
   }, [token, loading, segments])
 
   if (loading) return null

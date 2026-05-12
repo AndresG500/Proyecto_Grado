@@ -5,26 +5,30 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { pacienteService } from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 
 export default function RegistroPacienteScreen() {
   const router = useRouter()
-  const [name,        setName]        = useState('')
-  const [edad,        setEdad]        = useState('')
-  const [diagnostico, setDiagnostico] = useState('')
-  const [loading,     setLoading]     = useState(false)
-  const [error,       setError]       = useState('')
+  const { cuidador } = useAuth()
+  const [nombre_paciente, setNombrePaciente] = useState('')
+  const [edad_paciente, setEdadPaciente]   = useState('')
+  const [enfermedad,    setEnfermedad]      = useState('')
+  const [loading,      setLoading]          = useState(false)
+  const [error,        setError]            = useState('')
 
   const handleGuardar = async () => {
-    if (name.trim().length < 2) { setError('El nombre debe tener al menos 2 caracteres.'); return }
-    const edadNum = parseInt(edad)
-    if (!edad || isNaN(edadNum) || edadNum < 1 || edadNum > 120) { setError('Ingresa una edad válida.'); return }
+    if (nombre_paciente.trim().length < 2) { setError('El nombre debe tener al menos 2 caracteres.'); return }
+    const edadNum = parseInt(edad_paciente)
+    if (!edad_paciente || isNaN(edadNum) || edadNum < 1 || edadNum > 120) { setError('Ingresa una edad válida.'); return }
+    if (!cuidador?.id) { setError('No se identificó el cuidador. Inicia sesión nuevamente.'); return }
 
     setLoading(true); setError('')
     try {
       await pacienteService.registrar({
-        name: name.trim(),
-        edad: edadNum,
-        diagnostico: diagnostico.trim() || undefined,
+        nombre_paciente: nombre_paciente.trim(),
+        edad_paciente:   edadNum,
+        enfermedad:     enfermedad.trim() || undefined,
+        id_cuidador:    cuidador.id,
       })
       router.replace('/(app)/vincular-dispositivo' as any)
     } catch (err: any) {
@@ -53,11 +57,11 @@ export default function RegistroPacienteScreen() {
           ) : null}
 
           <View style={styles.field}>
-            <Text style={styles.label}>Nombre completo <Text style={styles.req}>*</Text></Text>
+            <Text style={styles.label}>Nombre completo del paciente <Text style={styles.req}>*</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput style={styles.input} placeholder="Ej: Carlos Gómez"
-                placeholderTextColor={Colors.textSecondary} value={name} onChangeText={setName} autoCapitalize="words" />
+                placeholderTextColor={Colors.textSecondary} value={nombre_paciente} onChangeText={setNombrePaciente} autoCapitalize="words" />
             </View>
           </View>
 
@@ -66,16 +70,16 @@ export default function RegistroPacienteScreen() {
             <View style={styles.inputWrap}>
               <Ionicons name="calendar-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput style={styles.input} placeholder="Ej: 72"
-                placeholderTextColor={Colors.textSecondary} value={edad} onChangeText={setEdad} keyboardType="number-pad" />
+                placeholderTextColor={Colors.textSecondary} value={edad_paciente} onChangeText={setEdadPaciente} keyboardType="number-pad" />
             </View>
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Diagnóstico <Text style={styles.opt}>(opcional)</Text></Text>
+            <Text style={styles.label}>Enfermedad o diagnóstico <Text style={styles.opt}>(opcional)</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="medkit-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput style={styles.input} placeholder="Ej: Alzheimer leve"
-                placeholderTextColor={Colors.textSecondary} value={diagnostico} onChangeText={setDiagnostico} autoCapitalize="sentences" />
+                placeholderTextColor={Colors.textSecondary} value={enfermedad} onChangeText={setEnfermedad} autoCapitalize="sentences" />
             </View>
           </View>
 

@@ -14,21 +14,34 @@ interface NavItem {
   route:      string
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Mapa',             icon: 'map-outline',              iconActive: 'map',              route: '/(app)/'                  },
-  { label: 'Alertas',          icon: 'notifications-outline',    iconActive: 'notifications',    route: '/(app)/alertas'           },
-  { label: 'Zonas seguras',    icon: 'shield-outline',           iconActive: 'shield-checkmark', route: '/(app)/zonas-seguras'     },
-  { label: 'Registrar paciente', icon: 'person-add-outline',     iconActive: 'person-add',       route: '/(app)/registro-paciente' },
-  { label: 'Vincular GPS',     icon: 'hardware-chip-outline',    iconActive: 'hardware-chip',    route: '/(app)/vincular-dispositivo' },
-  { label: 'Mi perfil',        icon: 'person-circle-outline',    iconActive: 'person-circle',    route: '/(app)/perfil'            },
-]
-
 interface Props { navigation: any }
 
 export default function DrawerContent({ navigation }: Props) {
-  const { cuidador, logout } = useAuth()
+  const { cuidador, tipoUsuario, logout } = useAuth()
   const router   = useRouter()
   const pathname = usePathname()
+
+  const NAV_ITEMS_CUIDADOR = [
+    { label: 'Mapa',               icon: 'map-outline' as IoniconsName,              iconActive: 'map' as IoniconsName,              route: '/(app)/'                        },
+    { label: 'Alertas',            icon: 'notifications-outline' as IoniconsName,   iconActive: 'notifications' as IoniconsName,    route: '/(app)/alertas'                 },
+    { label: 'Zonas seguras',     icon: 'shield-outline' as IoniconsName,          iconActive: 'shield-checkmark' as IoniconsName, route: '/(app)/zonas-seguras'          },
+    { label: 'Historial ubicación', icon: 'location-outline' as IoniconsName,       iconActive: 'location' as IoniconsName,        route: '/(app)/historial-ubicaciones' },
+    { label: 'Grupo familiar',     icon: 'people-outline' as IoniconsName,         iconActive: 'people' as IoniconsName,           route: '/(app)/grupo-familiar'         },
+    { label: 'Registrar paciente', icon: 'person-add-outline' as IoniconsName,    iconActive: 'person-add' as IoniconsName,       route: '/(app)/registro-paciente'      },
+    { label: 'Vincular GPS',       icon: 'hardware-chip-outline' as IoniconsName,  iconActive: 'hardware-chip' as IoniconsName,   route: '/(app)/vincular-dispositivo'   },
+    { label: 'Mi perfil',          icon: 'person-circle-outline' as IoniconsName,  iconActive: 'person-circle' as IoniconsName,   route: '/(app)/perfil'                 },
+  ]
+
+  const NAV_ITEMS_FAMILIAR = [
+    { label: 'Mapa',               icon: 'map-outline' as IoniconsName,              iconActive: 'map' as IoniconsName,              route: '/(app)/'                        },
+    { label: 'Alertas',            icon: 'notifications-outline' as IoniconsName,   iconActive: 'notifications' as IoniconsName,    route: '/(app)/alertas'                 },
+    { label: 'Zonas seguras',     icon: 'shield-outline' as IoniconsName,          iconActive: 'shield-checkmark' as IoniconsName, route: '/(app)/zonas-seguras'          },
+    { label: 'Historial ubicación', icon: 'location-outline' as IoniconsName,       iconActive: 'location' as IoniconsName,        route: '/(app)/historial-ubicaciones' },
+    { label: 'Grupo familiar',     icon: 'people-outline' as IoniconsName,         iconActive: 'people' as IoniconsName,           route: '/(app)/grupo-familiar'         },
+    { label: 'Mi perfil',          icon: 'person-circle-outline' as IoniconsName,  iconActive: 'person-circle' as IoniconsName,   route: '/(app)/perfil'                 },
+  ]
+
+  const navItems = tipoUsuario === 'familiar' ? NAV_ITEMS_FAMILIAR : NAV_ITEMS_CUIDADOR
 
   const initial = cuidador?.name?.charAt(0)?.toUpperCase() ?? '?'
 
@@ -66,7 +79,7 @@ export default function DrawerContent({ navigation }: Props) {
 
       {/* Navegación */}
       <View style={styles.nav}>
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = isActive(item.route)
           return (
             <TouchableOpacity

@@ -8,20 +8,24 @@ interface Cuidador {
   phone?: string
 }
 
+type TipoUsuario = 'cuidador' | 'familiar'
+
 interface AuthContextType {
   token:     string | null
   cuidador:  Cuidador | null
+  tipoUsuario: TipoUsuario
   loading:   boolean
-  login:     (token: string, cuidador: Cuidador) => Promise<void>
+  login:     (token: string, cuidador: Cuidador, tipo?: TipoUsuario) => Promise<void>
   logout:    () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token,    setToken]    = useState<string | null>(null)
-  const [cuidador, setCuidador] = useState<Cuidador | null>(null)
-  const [loading,  setLoading]  = useState(true)
+  const [token,        setToken]        = useState<string | null>(null)
+  const [cuidador,     setCuidador]     = useState<Cuidador | null>(null)
+  const [tipoUsuario,  setTipoUsuario]  = useState<TipoUsuario>('cuidador')
+  const [loading,      setLoading]      = useState(true)
 
   useEffect(() => { init() }, [])
 
@@ -29,27 +33,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const t = await AsyncStorage.getItem('token')
       const c = await AsyncStorage.getItem('cuidador')
-      if (t) { setToken(t); setCuidador(c ? JSON.parse(c) : null) }
+      const tipo = await AsyncStorage.getItem('tipoUsuario')
+      if (t) { 
+        setToken(t); 
+        setCuidador(c ? JSON.parse(c) : null)
+        setTipoUsuario((tipo as TipoUsuario) || 'cuidador')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const login = async (newToken: string, cuidadorData: Cuidador) => {
-    await AsyncStorage.setItem('token',    newToken)
-    await AsyncStorage.setItem('cuidador', JSON.stringify(cuidadorData))
+  const login = async (newToken: string, cuidadorData: Cuidador, tipo: TipoUsuario = 'cuidador') => {
+    await AsyncStorage.setItem('token',       newToken)
+    await AsyncStorage.setItem('cuidador',    JSON.stringify(cuidadorData))
+    await AsyncStorage.setItem('tipoUsuario', tipo)
     setToken(newToken)
     setCuidador(cuidadorData)
+    setTipoUsuario(tipo)
   }
 
   const logout = async () => {
-    await AsyncStorage.multiRemove(['token', 'cuidador'])
+    await AsyncStorage.multiRemove(['token', 'cuidador', 'tipoUsuario'])
     setToken(null)
     setCuidador(null)
+    setTipoUsuario('cuidador')
   }
 
   return (
-    <AuthContext.Provider value={{ token, cuidador, loading, login, logout }}>
+    <AuthContext.Provider value={{ token, cuidador, tipoUsuario, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -116,6 +116,7 @@ async def verificar_cuidador(email: str, password: str):
         return {
             "token": token,
             "cuidador": {
+                "id":    str(cuidador.get("_id", "")),
                 "name":  cuidador.get("name", ""),
                 "email": cuidador.get("email", ""),
                 "phone": cuidador.get("phone", ""),

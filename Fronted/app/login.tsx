@@ -30,7 +30,8 @@ export default function LoginScreen() {
       const { data } = await cuidadorService.login(email.trim().toLowerCase(), password)
       const token    = data.token ?? data.access_token ?? data.jwt
       const cuidador = data.cuidador ?? { email: email.trim() }
-      await login(token, cuidador)
+      const tipo     = data.tipo || 'cuidador'
+      await login(token, cuidador, tipo)
       router.replace('/(app)/' as any)
     } catch (err: any) {
       const msg =
@@ -117,7 +118,7 @@ export default function LoginScreen() {
             {/* Link de registro */}
             <TouchableOpacity
               style={styles.registerLink}
-              onPress={() => router.push('/register' as any)}
+              onPress={() => router.push('/elegir-rol' as any)}
               activeOpacity={0.7}
             >
               <Text style={styles.registerText}>

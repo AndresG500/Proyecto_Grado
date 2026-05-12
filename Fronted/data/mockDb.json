@@ -8,6 +8,45 @@
       "phone": "+573001234567",
       "patient_ids": ["pac_001"],
       "is_active": true
+    },
+    {
+      "id": "cuidador_001",
+      "name": "María Rodríguez",
+      "email": "maria@test.com",
+      "password": "password123",
+      "phone": "+573001234567",
+      "patient_ids": [],
+      "is_active": true
+    }
+  ],
+  "familiares": [
+    {
+      "id": "fam_001",
+      "name": "Juan Pérez",
+      "email": "juan@test.com",
+      "password": "password123",
+      "phone": "+573009876543",
+      "grupo_id": "grupo_001",
+      "is_active": true
+    },
+    {
+      "id": "fam_002",
+      "name": "Ana García",
+      "email": "ana@test.com",
+      "password": "password123",
+      "phone": "+573001112233",
+      "grupo_id": "grupo_001",
+      "is_active": true
+    }
+  ],
+  "grupos": [
+    {
+      "id": "grupo_001",
+      "nombre": "Familia Gómez",
+      "codigo": "FAM-ABCD12",
+      "cuidador_id": "cuidador_001",
+      "miembros": ["maria@test.com", "juan@test.com", "ana@test.com"],
+      "created_at": "2026-05-01T10:00:00Z"
     }
   ],
   "pacientes": [
