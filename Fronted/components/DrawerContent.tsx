@@ -7,13 +7,6 @@ import { Colors } from '@/constants/Colors'
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name']
 
-interface NavItem {
-  label:      string
-  icon:       IoniconsName
-  iconActive: IoniconsName
-  route:      string
-}
-
 interface Props { navigation: any }
 
 export default function DrawerContent({ navigation }: Props) {

@@ -76,7 +76,6 @@ Fronted/
 │   └── localDb.ts          # Base de datos local (AsyncStorage)
 ├── data/                   # Datos mock para desarrollo offline
 │   └── mockDb.json
-├── docs/                    # Documentación del proyecto
 └── assets/                 # Imágenes, iconos, fonts
 ```
 
@@ -139,13 +138,45 @@ const BASE_URL = 'http://<TU_IP>:8000'    // Dispositivo real (mismo WiFi)
 | `@react-native-async-storage` | 2.2.0 | Almacenamiento local |
 | `expo-clipboard` | ~8.0.8 | Portapapeles |
 | `expo-location` | ~19.0.8 | Ubicación GPS |
-| `babel-preset-expo` | ~54.0.0 | Preset de Babel para Expo |
 
 ---
 
 ## Errores resueltos
 
-> Consulta `docs/REPORTE-ERRORES.md` para el reporte completo con análisis detallado de cada error, alternativas consideradas y justificación de las soluciones elegidas.
+### Bundling fallido por `react-native-maps` en web
+
+**Problema:** El proyecto intentaba bundlear para web, pero `react-native-maps` es incompatible con web.
+
+**Solución:** Se eliminó el soporte web del proyecto (`react-dom`, `react-native-web`, configuración en `app.json`).
+
+### Versiones incompatibles de paquetes
+
+**Problema:** `expo-clipboard` y `expo-location` tenían versiones de SDK 55, pero el proyecto usa SDK 54.
+
+**Solución:** Se ajustaron las versiones a las esperadas por Expo SDK 54.
+
+### Loop infinito de re-renders
+
+**Problema:** En `historial-ubicaciones.tsx`, un `useCallback` con `selectedPaciente` en dependencias causaba un loop infinito.
+
+**Solución:** Se eliminó `useCallback` y se usó una función plana con `useEffect` de montaje único.
+
+### Login familiar llamaba función incorrecta
+
+**Problema:** `familiarService.login` llamaba a `localLogin` en vez de `localLoginFamiliar`.
+
+**Solución:** Se corrigió el nombre de la función en `services/api.ts`.
+
+### Inconsistencia de campos en datos mock
+
+**Problema:** `mockDb.json` usaba nombres de campos inconsistentes (`name` vs `nombre_paciente`, etc.).
+
+**Solución:** Se actualizó el schema para incluir todas las variaciones de nombres.
+
+### Warnings de ESLint
+
+- Se corrigieron dependencias faltantes en `useEffect`
+- Se eliminó interfaz `NavItem` no utilizada en `DrawerContent.tsx`
 
 ---
 
@@ -172,8 +203,8 @@ const BASE_URL = 'http://<TU_IP>:8000'    // Dispositivo real (mismo WiFi)
 
 ### Mejoras de código
 
-- Integrar `expo-location` para ubicación real del cuidador
-- Implementar TypeScript con tipos específicos en todos los archivos
+- Agregar `expo-location` para obtener ubicación real del cuidador
+- Implementar TypeScript en todos los archivos con tipos específicos
 - Agregar tests unitarios con Jest
 - Implementar variable de entorno para `BASE_URL` con `.env`
 
@@ -193,15 +224,6 @@ Este proyecto usa la **New Architecture** de React Native (`newArchEnabled: true
 `expo-location` está instalado pero no se importa ni usa actualmente en ninguna pantalla. Debería integrarse para:
 - Centrar el mapa en la ubicación real del cuidador
 - Obtener coordenadas para las zonas seguras
-
----
-
-## Documentación
-
-| Archivo | Descripción |
-|---------|-------------|
-| `docs/README-old.md` | README anterior |
-| `docs/REPORTE-ERRORES.md` | Reporte completo de errores corregidos |
 
 ---
 

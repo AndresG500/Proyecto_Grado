@@ -66,7 +66,7 @@ export const familiarService = {
       return await api.post('/familiares/verificar', { email, password })
     } catch (err: any) {
       console.log('Error en login familiar:', err)
-      const result = await localLogin(email, password)
+      const result = await localLoginFamiliar(email, password)
       if (!result) throw { response: { data: { detail: 'Credenciales inválidas. Intenta de nuevo.' } } }
       return { data: result }
     }
