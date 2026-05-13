@@ -1,58 +1,93 @@
-from database.database import conexion_database
-from models.model_paciente import CrearPaciente, ActualizarPaciente, ActaulizarUbicacion
+from database.database import get_database  # ← corregido
+from models.model_paciente import CrearPaciente, ActualizarPaciente
 from bson import ObjectId
 from datetime import datetime
 from utils.Logger import Logger
 
-conexion = conexion_database()
-coleccion         = conexion["Pacientes"]
-col_ubicaciones   = conexion["Ubicaciones"]
-col_cuidadores    = conexion["Cuidadores"]
 
-async def registrar_paciente(datos: CrearPaciente):
+async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← recibe email del token
     try:
-        cuidador = await col_cuidadores.find_one({"_id": ObjectId(datos.id_cuidador)})
+        db             = get_database()
+        coleccion      = db["Pacientes"]
+        col_cuidadores = db["Cuidadores"]
+
+        cuidador = await col_cuidadores.find_one({"email": cuidador_email})  # ← busca por email
         if not cuidador:
-            Logger.add_to_log("warn", f"Cuidador no encontrado: {datos.id_cuidador}")
+            Logger.add_to_log("warn", f"Cuidador no encontrado: {cuidador_email}")
             return {"mensaje": "No se encontró el cuidador especificado"}
 
         resultado = await coleccion.insert_one({
-            "nombre_paciente": datos.nombre_paciente,
-            "edad_paciente":   datos.edad_paciente,
-            "enfermedad":      datos.enfermedad,
-            "id_cuidador":     datos.id_cuidador,
-            "id_dispositivo":  datos.id_dispositivo,
-            "ultima_ubicacion": None,
-            "ultima_señal": None,
+            "nombre_paciente":    datos.nombre_paciente,
+            "edad_paciente":      datos.edad_paciente,
+            "enfermedad":         datos.enfermedad,
+            "id_cuidador":        str(cuidador["_id"]),  # ← toma el _id real del cuidador
+            "id_dispositivo":     datos.id_dispositivo,
+            "ultima_ubicacion":   None,
+            "ultima_señal":       None,
             "estado_dispositivo": None,
-            "created_at": datetime.utcnow(),
-            "activo": True
+            "created_at":         datetime.utcnow(),
+            "activo":             True
         })
 
         await col_cuidadores.update_one(
-            {"_id": ObjectId(datos.id_cuidador)},
+            {"_id": cuidador["_id"]},
             {"$push": {"patient_ids": str(resultado.inserted_id)}}
         )
 
         Logger.add_to_log("info", f"Paciente registrado: {datos.nombre_paciente}")
-        return {"mensaje": "Paciente registrado exitosamente"}
+        return {"mensaje": "Paciente registrado exitosamente", "id_paciente": str(resultado.inserted_id)}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al registrar paciente: {ex}")
         return {"error": f"No se pudo registrar el paciente: {ex}"}
 
-async def borrar_paciente(patient_id: str):
-    try:
-        paciente = await coleccion.find_one({"_id": ObjectId(patient_id)})
 
+async def obtener_paciente(patient_id: str, cuidador_email: str):
+    try:
+        db             = get_database()
+        coleccion      = db["Pacientes"]
+        col_cuidadores = db["Cuidadores"]
+
+        cuidador = await col_cuidadores.find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+
+        paciente = await coleccion.find_one({"_id": ObjectId(patient_id)})
         if not paciente:
-            Logger.add_to_log("warn", f"Paciente no encontrado para eliminar: {patient_id}")
             return {"mensaje": "No se encontró el paciente"}
 
-        await coleccion.delete_one({"_id": ObjectId(patient_id)})
+        if str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
+            return {"error": "No tienes permiso para ver este paciente"}
 
+        paciente["_id"] = str(paciente["_id"])
+        return paciente
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener paciente: {ex}")
+        return {"error": f"No se pudo obtener el paciente: {ex}"}
+
+
+async def borrar_paciente(patient_id: str, cuidador_email: str):
+    try:
+        db             = get_database()
+        coleccion      = db["Pacientes"]
+        col_cuidadores = db["Cuidadores"]
+
+        cuidador = await col_cuidadores.find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+
+        paciente = await coleccion.find_one({"_id": ObjectId(patient_id)})
+        if not paciente:
+            return {"mensaje": "No se encontró el paciente"}
+
+        if str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
+            Logger.add_to_log("warn", f"Eliminación no autorizada: {cuidador_email} vs paciente {patient_id}")
+            return {"error": "No tienes permiso para eliminar este paciente"}
+
+        await coleccion.delete_one({"_id": ObjectId(patient_id)})
         await col_cuidadores.update_one(
-            {"_id": ObjectId(paciente["id_cuidador"])},
+            {"_id": cuidador["_id"]},
             {"$pull": {"patient_ids": patient_id}}
         )
 
@@ -62,14 +97,25 @@ async def borrar_paciente(patient_id: str):
     except Exception as ex:
         Logger.add_to_log("error", f"Error al eliminar paciente: {ex}")
         return {"error": f"No se pudo eliminar el paciente: {ex}"}
-    
-async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente):
-    try:
-        paciente = await coleccion.find_one({"_id": ObjectId(patient_id)})
 
+
+async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente, cuidador_email: str):
+    try:
+        db             = get_database()
+        coleccion      = db["Pacientes"]
+        col_cuidadores = db["Cuidadores"]
+
+        cuidador = await col_cuidadores.find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+
+        paciente = await coleccion.find_one({"_id": ObjectId(patient_id)})
         if not paciente:
-            Logger.add_to_log("warn", f"Paciente no encontrado para actualizar: {patient_id}")
             return {"mensaje": "No se encontró el paciente"}
+
+        if str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
+            Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs paciente {patient_id}")
+            return {"error": "No tienes permiso para actualizar este paciente"}
 
         campos = {}
         if datos.nombre_paciente:
@@ -81,50 +127,38 @@ async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente):
         if datos.id_dispositivo:
             campos["id_dispositivo"] = datos.id_dispositivo
 
-        if campos:
-            await coleccion.update_one({"_id": ObjectId(patient_id)}, {"$set": campos})
-            Logger.add_to_log("info", f"Paciente actualizado: {patient_id}")
-            return {"mensaje": "Paciente actualizado exitosamente"}
-        else:
-            Logger.add_to_log("warn", f"No se proporcionaron campos para actualizar paciente: {patient_id}")
+        if not campos:
             return {"mensaje": "No se proporcionaron campos para actualizar"}
+
+        await coleccion.update_one({"_id": ObjectId(patient_id)}, {"$set": campos})
+        Logger.add_to_log("info", f"Paciente actualizado: {patient_id}")
+        return {"mensaje": "Paciente actualizado exitosamente"}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al actualizar paciente: {ex}")
         return {"error": f"No se pudo actualizar el paciente: {ex}"}
 
-async def guardar_ubicacion(datos: ActaulizarUbicacion):
+
+async def listar_pacientes(cuidador_email: str):
     try:
-        paciente = await coleccion.find_one({"_id": ObjectId(datos.patient_id)})
+        db             = get_database()
+        col_cuidadores = db["Cuidadores"]
+        col_pacientes  = db["Pacientes"]
 
-        if not paciente:
-            Logger.add_to_log("warn", f"Paciente no encontrado para guardar ubicación: {datos.patient_id}")
-            return {"mensaje": "No se encontró el paciente"}
+        cuidador = await col_cuidadores.find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
 
-        ubicacion = {
-            "patient_id": datos.patient_id,
-            "latitude": datos.latitude,
-            "longitude": datos.longitude,
-            "device_id": datos.device_id,
-            "recorded_at": datos.recorded_at
-        }
+        cursor = col_pacientes.find({"id_cuidador": str(cuidador["_id"])})
 
-        await col_ubicaciones.insert_one(ubicacion)
+        pacientes = []
+        async for paciente in cursor:
+            paciente["_id"] = str(paciente["_id"])
+            pacientes.append(paciente)
 
-        await coleccion.update_one(
-            {"_id": ObjectId(datos.patient_id)},
-            {
-                "$set": {
-                    "ultima_ubicacion": {"latitude": datos.latitude, "longitude": datos.longitude},
-                    "ultima_señal": None,
-                    "estado_dispositivo": None
-                }
-            }
-        )
-
-        Logger.add_to_log("info", f"Ubicación guardada para paciente: {datos.patient_id}")
-        return {"mensaje": "Ubicación actualizada exitosamente"}
+        Logger.add_to_log("info", f"Pacientes listados para cuidador: {cuidador_email}")
+        return pacientes
 
     except Exception as ex:
-        Logger.add_to_log("error", f"Error al guardar ubicación: {ex}")
-        return {"error": f"No se pudo actualizar la ubicación: {ex}"}
+        Logger.add_to_log("error", f"Error al listar pacientes: {ex}")
+        return {"error": f"No se pudieron listar los pacientes: {ex}"}

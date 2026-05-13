@@ -8,9 +8,9 @@ class DispositivoBase(BaseModel):
     estado: bool = False  # False por defecto, True cuando el ESP32 se anuncie
 
 class LocalizacionDispositivo(BaseModel):
-    latitude: float = Field(..., ge=-90.0, le=90.0)
-    longitude: float = Field(..., ge=-180.0, le=180.0)
-    altitude: Optional[float] = None
+    latitud: float = Field(..., ge=-90.0, le=90.0)
+    longitud: float = Field(..., ge=-180.0, le=180.0)
+    altitud: Optional[float] = None
     satellites: Optional[int] = None  # Calidad del fix GPS del BZ-251
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
@@ -26,6 +26,10 @@ class ActualizarDispositivo(BaseModel):
 class DispositivoDisponible(BaseModel):
     id_dispositivo: str
     dispositivo_detectado: datetime = Field(default_factory=datetime.utcnow)
+
+class VincularDispositivo(BaseModel):
+    id_dispositivo: str
+    paciente_id: str
 
 class RegistroDispositivoBase(BaseModel):
     id: Optional[str] = Field(None, alias="_id")  # _id de MongoDB
