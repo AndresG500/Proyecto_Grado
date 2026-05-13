@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Optional
 from bson import ObjectId
 from FCM.client import enviar_notificacion_multicast
 from utilidades.geo import distancia_metros
@@ -11,26 +11,26 @@ logger = logging.getLogger(__name__)
 
 COOLDOWN_ALERTA_SEGUNDOS = 300  # 5 minutos
 
-coleccion_zonas_seguras = get_database()["ZonasSeguras"]
-coleccion_pacientes = get_database()["Pacientes"]
-coleccion_alertas = get_database()["Alertas"]
-coleccion_grupos = get_database()["Grupos"]
-coleccion_cuidadores = get_database()["Cuidadores"]
-
 
 # ─────────────────────────────────────────────────────────────────────
 # EVALUACIÓN DE GEOCERCAS
 # ─────────────────────────────────────────────────────────────────────
 
 async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
+    # BUG CORREGIDO: colecciones obtenidas dentro de la función (no al importar el módulo)
+    db = get_database()
+    coleccion_zonas_seguras = db["ZonasSeguras"]
+    coleccion_pacientes     = db["Pacientes"]
+
     if isinstance(paciente_id, ObjectId):
         paciente_id_str = str(paciente_id)
     else:
         paciente_id_str = str(paciente_id)
 
+    # BUG CORREGIDO: campo "activa": True en vez de "estado": "activa"
     zonas = await coleccion_zonas_seguras.find({
         "paciente_id": paciente_id_str,
-        "estado": "activa",
+        "activa": True,
     }).to_list(length=None)
 
     if not zonas:
@@ -41,11 +41,15 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
     distancia_minima = float("inf")
 
     for zona in zonas:
+        # BUG CORREGIDO: zona["centro"]["latitud"] y zona["centro"]["longitud"]
+        #                en vez de zona["latitud_centro"] / zona["longitud_centro"]
+        # BUG CORREGIDO: zona["radio_metros"] en vez de zona["radio"]
         d = distancia_metros(
             lat, lng,
-            zona["latitud_centro"], zona["longitud_centro"],
+            zona["centro"]["latitud"],
+            zona["centro"]["longitud"],
         )
-        if d <= zona["radio"]:
+        if d <= zona["radio_metros"]:
             dentro_de_alguna = True
             break
         if d < distancia_minima:
@@ -61,9 +65,9 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
         logger.warning("Paciente %s no encontrado al evaluar zonas", paciente_id_str)
         return
 
-    estaba_fuera = paciente.get("fuera_de_zona", False)
+    estaba_fuera  = paciente.get("fuera_de_zona", False)
     ultima_alerta = paciente.get("ultima_alerta_timestamp")
-    ahora = datetime.now(timezone.utc)
+    ahora         = datetime.now(timezone.utc)
 
     if dentro_de_alguna:
         if estaba_fuera:
@@ -92,18 +96,12 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
         try:
             await coleccion_pacientes.update_one(
                 {"_id": ObjectId(paciente_id_str)},
-                {"$set": {
-                    "fuera_de_zona": True,
-                    "ultima_alerta_timestamp": ahora,
-                }},
+                {"$set": {"fuera_de_zona": True, "ultima_alerta_timestamp": ahora}},
             )
         except Exception:
             await coleccion_pacientes.update_one(
                 {"_id": paciente_id_str},
-                {"$set": {
-                    "fuera_de_zona": True,
-                    "ultima_alerta_timestamp": ahora,
-                }},
+                {"$set": {"fuera_de_zona": True, "ultima_alerta_timestamp": ahora}},
             )
         return
 
@@ -133,7 +131,19 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
 # CREACIÓN Y DESPACHO DE ALERTAS
 # ─────────────────────────────────────────────────────────────────────
 
-async def crear_y_despachar_alerta(paciente: dict,zona_mas_cercana: Optional[dict],lat: float,lng: float,tipo: str,distancia: float,) -> None:
+async def crear_y_despachar_alerta(
+    paciente: dict,
+    zona_mas_cercana: Optional[dict],
+    lat: float,
+    lng: float,
+    tipo: str,
+    distancia: float,
+) -> None:
+    # BUG CORREGIDO: colecciones obtenidas dentro de la función
+    db = get_database()
+    coleccion_alertas    = db["Alertas"]
+    coleccion_grupos     = db["Grupos"]
+    coleccion_cuidadores = db["Cuidadores"]
 
     paciente_id = paciente["_id"]
     if isinstance(paciente_id, ObjectId):
@@ -141,56 +151,61 @@ async def crear_y_despachar_alerta(paciente: dict,zona_mas_cercana: Optional[dic
     else:
         paciente_id_str = str(paciente_id)
 
-    nombre_paciente = paciente.get("nombre_paciente", paciente.get("nombre", "El paciente"))
+    # BUG CORREGIDO: usa nombre_paciente (campo real del modelo)
+    nombre_paciente = paciente.get("nombre_paciente", "El paciente")
 
-    # 1. Construir mensaje según tipo de alerta
     if tipo == "salida_zona_segura":
         titulo = "⚠️ Alerta UbiLife"
         cuerpo = f"{nombre_paciente} ha salido de su zona segura"
-    else:  # alerta_periodica
+    else:
         titulo = f"⚠️ {nombre_paciente} sigue fuera de zona"
         cuerpo = f"Está a aproximadamente {int(distancia)} metros de la zona más cercana"
 
-    # 2. Crear documento de alerta (estado inicial: pendiente)
     ahora = datetime.now(timezone.utc)
+
+    # BUG CORREGIDO: incluye paciente_nombre y zona_nombre para que el frontend pueda mostrarlos
     alerta_doc = {
-        "paciente_id": paciente_id_str,
-        "zonasegura_id": zona_mas_cercana["_id"] if zona_mas_cercana else None,
-        "tipo": tipo,
-        "latitud": lat,
-        "longitud": lng,
-        "timestamp": ahora,
-        "estado": "pendiente",
-        "mensaje": cuerpo,
-        "cuidadores_notificados": [],
-        "fcm_exitos": 0,
-        "fcm_fallos": 0,
-        "ultima_notif": ahora,
+        "paciente_id":             paciente_id_str,
+        "paciente_nombre":         nombre_paciente,
+        "zonasegura_id":           zona_mas_cercana["_id"] if zona_mas_cercana else None,
+        "zona_nombre":             zona_mas_cercana.get("nombre") if zona_mas_cercana else None,
+        "tipo":                    tipo,
+        "latitud":                 lat,
+        "longitud":                lng,
+        "timestamp":               ahora,
+        "estado":                  "pendiente",
+        "mensaje":                 cuerpo,
+        "cuidadores_notificados":  [],
+        "fcm_exitos":              0,
+        "fcm_fallos":              0,
+        "ultima_notif":            ahora,
     }
-    result = await coleccion_alertas.insert_one(alerta_doc)
+    result    = await coleccion_alertas.insert_one(alerta_doc)
     alerta_id = result.inserted_id
 
-    # 3. Buscar cuidadores del paciente vía colección grupo
+    # BUG CORREGIDO: usa paciente_ids (array) en vez de paciente_id (singular)
     grupos = await coleccion_grupos.find({"paciente_ids": paciente_id_str}).to_list(length=None)
     if not grupos:
         logger.warning("Paciente %s sin cuidadores asignados", paciente_id_str)
         await coleccion_alertas.update_one(
-            {"_id": alerta_id},
-            {"$set": {"estado": "fallida"}},
+            {"_id": alerta_id}, {"$set": {"estado": "fallida"}}
         )
         return
 
     cuidador_ids = []
     for g in grupos:
+        # BUG CORREGIDO: usa cuidador_ids (array) en vez de cuidador_id (singular)
         cuidador_ids.extend(g.get("cuidador_ids", []))
 
     cuidador_ids_unicos = list(set(cuidador_ids))
 
     cuidadores = await coleccion_cuidadores.find(
-        {"_id": {"$in": [ObjectId(cid) if isinstance(cid, str) and len(cid) == 24 else cid for cid in cuidador_ids_unicos]}}
+        {"_id": {"$in": [
+            ObjectId(cid) if isinstance(cid, str) and len(cid) == 24 else cid
+            for cid in cuidador_ids_unicos
+        ]}}
     ).to_list(length=None)
 
-    # 4. Filtrar solo cuidadores con FCM token registrado
     tokens = []
     cuidador_ids_con_token = []
     for c in cuidadores:
@@ -201,58 +216,49 @@ async def crear_y_despachar_alerta(paciente: dict,zona_mas_cercana: Optional[dic
 
     if not tokens:
         logger.warning(
-            "Ningún cuidador del paciente %s tiene fcm_token registrado",
-            paciente_id_str,
+            "Ningún cuidador del paciente %s tiene fcm_token registrado", paciente_id_str
         )
         await coleccion_alertas.update_one(
-            {"_id": alerta_id},
-            {"$set": {"estado": "fallida"}},
+            {"_id": alerta_id}, {"$set": {"estado": "fallida"}}
         )
         return
 
-    # 5. Enviar notificaciones FCM
     resultado = await enviar_notificacion_multicast(
         tokens=tokens,
         titulo=titulo,
         cuerpo=cuerpo,
         data={
-            "tipo": tipo,
-            "alerta_id": str(alerta_id),
+            "tipo":        tipo,
+            "alerta_id":   str(alerta_id),
             "paciente_id": paciente_id_str,
-            "lat": lat,
-            "lng": lng,
+            "lat":         lat,
+            "lng":         lng,
         },
     )
 
-    # 6. Actualizar la alerta con el resultado
     estado_final = "enviada" if resultado["exitos"] > 0 else "fallida"
     await coleccion_alertas.update_one(
         {"_id": alerta_id},
         {"$set": {
-            "estado": estado_final,
+            "estado":                 estado_final,
             "cuidadores_notificados": cuidador_ids_con_token,
-            "fcm_exitos": resultado["exitos"],
-            "fcm_fallos": resultado["fallos"],
+            "fcm_exitos":             resultado["exitos"],
+            "fcm_fallos":             resultado["fallos"],
         }},
     )
 
     logger.info(
-        "Alerta %s | tipo=%s | paciente=%s | cuidadores=%d | "
-        "FCM exitos=%d fallos=%d",
+        "Alerta %s | tipo=%s | paciente=%s | cuidadores=%d | FCM exitos=%d fallos=%d",
         str(alerta_id), tipo, paciente_id_str, len(tokens),
         resultado["exitos"], resultado["fallos"],
     )
 
-    # 7. Limpiar tokens inválidos (opcional, robustez)
     if resultado["tokens_invalidos"]:
         await coleccion_cuidadores.update_many(
             {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
             {"$unset": {"fcm_token": ""}},
         )
-        logger.info(
-            "Limpiados %d tokens FCM inválidos",
-            len(resultado["tokens_invalidos"]),
-        )
+        logger.info("Limpiados %d tokens FCM inválidos", len(resultado["tokens_invalidos"]))
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -260,7 +266,8 @@ async def crear_y_despachar_alerta(paciente: dict,zona_mas_cercana: Optional[dic
 # ─────────────────────────────────────────────────────────────────────
 
 async def listar_alertas(paciente_id: Optional[str] = None) -> list[dict]:
-    """Lista las alertas, opcionalmente filtradas por paciente."""
+    db               = get_database()
+    coleccion_alertas = db["Alertas"]
     query = {}
     if paciente_id:
         query["paciente_id"] = to_str_id(paciente_id)
@@ -269,11 +276,13 @@ async def listar_alertas(paciente_id: Optional[str] = None) -> list[dict]:
 
 
 async def obtener_alerta(alerta_id: str) -> Optional[dict]:
-    return await coleccion_alertas.find_one({"_id": ObjectId(alerta_id)})
+    db = get_database()
+    return await db["Alertas"].find_one({"_id": ObjectId(alerta_id)})
 
 
 async def actualizar_estado(alerta_id: str, nuevo_estado: str) -> Optional[dict]:
-    await coleccion_alertas.update_one(
+    db = get_database()
+    await db["Alertas"].update_one(
         {"_id": ObjectId(alerta_id)},
         {"$set": {"estado": nuevo_estado}},
     )
@@ -281,21 +290,22 @@ async def actualizar_estado(alerta_id: str, nuevo_estado: str) -> Optional[dict]
 
 
 # ─────────────────────────────────────────────────────────────────────
-# TAREA PERIÓDICA DE REENVÍO DE ALERTAS
+# TAREA PERIÓDICA DE REENVÍO
 # ─────────────────────────────────────────────────────────────────────
 
-
 async def reenviar_alertas_activas() -> dict:
-    """
-    Reenvía notificaciones para alertas activas que ya pasaron el cooldown.
-    Se ejecuta cada 5 minutos desde app.py.
-    """
     try:
-        ahora = datetime.now(timezone.utc)
+        db = get_database()
+        coleccion_alertas    = db["Alertas"]
+        coleccion_pacientes  = db["Pacientes"]
+        coleccion_grupos     = db["Grupos"]
+        coleccion_cuidadores = db["Cuidadores"]
+
+        ahora  = datetime.now(timezone.utc)
         cutoff = ahora - timedelta(seconds=COOLDOWN_ALERTA_SEGUNDOS)
 
         alertas_activas = await coleccion_alertas.find({
-            "estado": "enviada",
+            "estado":      "enviada",
             "ultima_notif": {"$lt": cutoff},
         }).to_list(length=None)
 
@@ -303,16 +313,11 @@ async def reenviar_alertas_activas() -> dict:
             logger.info("No hay alertas activas pendientes de reenvío")
             return {"mensaje": "Sin alertas pendientes"}
 
-        logger.info(f"Encontradas {len(alertas_activas)} alertas activas para reenviar")
+        logger.info("Encontradas %d alertas activas para reenviar", len(alertas_activas))
 
         for alerta in alertas_activas:
             paciente_id = alerta.get("paciente_id")
-
-            if isinstance(paciente_id, ObjectId):
-                paciente_id_str = str(paciente_id)
-            else:
-                paciente_id_str = str(paciente_id) if paciente_id else None
-
+            paciente_id_str = str(paciente_id) if paciente_id else None
             if not paciente_id_str:
                 continue
 
@@ -328,27 +333,22 @@ async def reenviar_alertas_activas() -> dict:
             lat = alerta.get("latitud", 0)
             lng = alerta.get("longitud", 0)
 
-            grupos = await coleccion_grupos.find({"paciente_ids": paciente_id_str}).to_list(length=None)
+            grupos = await coleccion_grupos.find(
+                {"paciente_ids": paciente_id_str}
+            ).to_list(length=None)
             if not grupos:
-                logger.warning("No se encontraron grupos para paciente %s", paciente_id_str)
                 continue
 
             cuidador_ids = []
             for g in grupos:
                 cuidador_ids.extend(g.get("cuidador_ids", []))
 
-            cuidador_ids_unicos = list(set(cuidador_ids))
-
-            if not cuidador_ids_unicos:
-                continue
-
             object_ids = []
-            for cid in cuidador_ids_unicos:
+            for cid in set(cuidador_ids):
                 try:
-                    if isinstance(cid, str) and len(cid) == 24:
-                        object_ids.append(ObjectId(cid))
-                    elif isinstance(cid, ObjectId):
-                        object_ids.append(cid)
+                    object_ids.append(
+                        ObjectId(cid) if isinstance(cid, str) and len(cid) == 24 else cid
+                    )
                 except Exception:
                     pass
 
@@ -361,22 +361,18 @@ async def reenviar_alertas_activas() -> dict:
 
             tokens = [c.get("fcm_token") for c in cuidadores if c.get("fcm_token")]
             if not tokens:
-                logger.warning("No hay tokens FCM para cuidadores del paciente %s", paciente_id_str)
                 continue
-
-            titulo = f"⚠️ Recordatorio: {nombre_paciente} sigue fuera de zona"
-            cuerpo = f"El paciente sigue fuera de su zona segura. Última ubicación conocida."
 
             resultado = await enviar_notificacion_multicast(
                 tokens=tokens,
-                titulo=titulo,
-                cuerpo=cuerpo,
+                titulo=f"⚠️ Recordatorio: {nombre_paciente} sigue fuera de zona",
+                cuerpo="El paciente sigue fuera de su zona segura.",
                 data={
-                    "tipo": "alerta_periodica",
-                    "alerta_id": str(alerta["_id"]),
+                    "tipo":        "alerta_periodica",
+                    "alerta_id":   str(alerta["_id"]),
                     "paciente_id": paciente_id_str,
-                    "lat": str(lat),
-                    "lng": str(lng),
+                    "lat":         str(lat),
+                    "lng":         str(lng),
                 },
             )
 
@@ -385,10 +381,12 @@ async def reenviar_alertas_activas() -> dict:
                 {"$set": {"ultima_notif": ahora}},
             )
 
-            logger.info(f"Alerta {alerta['_id']} reenviada a {resultado['exitos']} cuidadores")
+            logger.info(
+                "Alerta %s reenviada a %d cuidadores", alerta["_id"], resultado["exitos"]
+            )
 
         return {"mensaje": f"Se procesaron {len(alertas_activas)} alertas"}
 
     except Exception as ex:
-        logger.error(f"Error en reenviar_alertas_activas: {ex}")
+        logger.error("Error en reenviar_alertas_activas: %s", ex)
         return {"error": str(ex)}

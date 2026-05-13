@@ -1,32 +1,29 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
-from enum import Enum
 
-class EstadoAlerta(str, Enum):
-    ACTIVA    = "activa"
-    ATENDIDA  = "atendida"   # Un cuidador marcó "voy en camino"
-    RESUELTA  = "resuelta"   # El paciente volvió a la zona segura
-
-class CrearAlerta(BaseModel):
-    paciente_id: str = Field(...)
-    grupo_id:    str = Field(...)
-    coordenadas: dict = Field(..., description="Última ubicación del paciente al salir de la zona")
-    zona_nombre: str = Field(..., description="Nombre de la zona segura que abandonó")
 
 class RespuestaAlerta(BaseModel):
-    id:              str = Field(...)
-    paciente_id:     str = Field(...)
-    grupo_id:        str = Field(...)
-    coordenadas:     dict = Field(...)
-    zona_nombre:     str = Field(...)
-    estado:          EstadoAlerta = Field(...)
-    atendida_por:    Optional[str] = Field(None, description="ID del cuidador que atendió")
-    created_at:      datetime = Field(...)
-    ultima_notif:    datetime = Field(..., description="Última vez que se envió la notificación")
+    # BUG CORREGIDO: campos ahora coinciden exactamente con lo que guarda service_alerta.py
+    id:                      str            = Field(...)
+    paciente_id:             str            = Field(...)
+    paciente_nombre:         Optional[str]  = Field(None)
+    zonasegura_id:           Optional[str]  = Field(None)
+    zona_nombre:             Optional[str]  = Field(None)
+    tipo:                    str            = Field(...)   # salida_zona_segura | alerta_periodica
+    latitud:                 float          = Field(...)
+    longitud:                float          = Field(...)
+    timestamp:               datetime       = Field(...)
+    estado:                  str            = Field(...)   # pendiente | enviada | fallida | resuelta
+    mensaje:                 str            = Field(...)
+    cuidadores_notificados:  list[str]      = Field(default_factory=list)
+    fcm_exitos:              int            = Field(0)
+    fcm_fallos:              int            = Field(0)
+    ultima_notif:            datetime       = Field(...)
 
     class Config:
         from_attributes = True
+
 
 class AtenderAlerta(BaseModel):
     cuidador_id: str = Field(..., description="Cuidador que marca voy en camino")

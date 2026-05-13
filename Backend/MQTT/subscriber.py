@@ -11,6 +11,7 @@ from services.service_alerta import evaluar_zonas_seguras
 from utils.eventos import bus_eventos
 from datetime import datetime, timezone
 
+
 TOPIC_PATRON = "ubilife/dispositivo/+/gps"
 
 
@@ -23,25 +24,46 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         return
 
     db = get_database()
+
+    # ── 1. Verificar si el dispositivo ya está en la colección principal ──────
     dispositivo = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
+
     if not dispositivo:
-        await db["Dispositivos"].insert_one({
-            "id_dispositivo":      id_dispositivo,
-            "paciente_id":          None,
-            "estado":               True,
-            "ultima_localizacion":  None,
-            "ultima_conexion":      datetime.utcnow(),
-            "nivel_bateria":        None,
-            "created_at":           datetime.utcnow()
-        })
-        Logger.add_to_log("info", f"Dispositivo auto-registrado: {id_dispositivo}")
-        dispositivo = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
+        # ── 2. No está vinculado aún → anunciarlo en DispositivosDisponibles ──
+        #       Usamos upsert para no duplicar si ya estaba anunciado.
+        #       Actualizamos dispositivo_detectado para refrescar la ventana de 5 min.
+        await db["DispositivosDisponibles"].update_one(
+            {"id_dispositivo": id_dispositivo},
+            {
+                "$set": {
+                    "id_dispositivo":      id_dispositivo,
+                    "dispositivo_detectado": datetime.utcnow(),
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.utcnow(),
+                }
+            },
+            upsert=True,
+        )
+        Logger.add_to_log(
+            "info",
+            f"Dispositivo no vinculado, anunciado en DispositivosDisponibles: {id_dispositivo}",
+        )
+        # No hay paciente asociado todavía → no hay nada más que procesar
+        return
+
+    # ── 3. El dispositivo existe en Dispositivos → actualizar última conexión ─
+    await db["Dispositivos"].update_one(
+        {"id_dispositivo": id_dispositivo},
+        {"$set": {"ultima_conexion": datetime.utcnow()}},
+    )
 
     paciente_id = dispositivo.get("paciente_id")
     if not paciente_id:
         Logger.add_to_log("warn", f"Dispositivo {id_dispositivo} sin paciente asignado")
         return
 
+    # ── 4. Construir y guardar la ubicación en el historial ───────────────────
     try:
         datos = HistorialUbicacionBase(
             paciente_id=str(paciente_id),
@@ -56,13 +78,14 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
 
     if isinstance(resultado, dict) and "error" in resultado:
         Logger.add_to_log("error", f"Fallo registrando ubicación MQTT: {resultado['error']}")
-        return  # ← detener aquí, nada más que hacer
-    
+        return
+
     Logger.add_to_log(
         "info",
         f"GPS guardado | dispositivo={id_dispositivo} paciente={paciente_id} lat={lat} lng={lng}",
     )
 
+    # ── 5. Evaluar geocercas y emitir evento SSE ──────────────────────────────
     try:
         await evaluar_zonas_seguras(str(paciente_id), float(lat), float(lng))
     except Exception as ex:
@@ -77,8 +100,9 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         },
     )
 
+
 async def manejar_mensaje(message: aiomqtt.Message) -> None:
-    topic = message.topic.value
+    topic  = message.topic.value
     partes = topic.split("/")
 
     if len(partes) != 4 or partes[0] != "ubilife" or partes[3] != "gps":
@@ -101,10 +125,7 @@ async def mqtt_subscriber_task() -> None:
 
     while True:
         try:
-            Logger.add_to_log(
-                "info",
-                f"Conectando a MQTT ",
-            )
+            Logger.add_to_log("info", "Conectando a MQTT")
             async with aiomqtt.Client(
                 hostname=settings.MQTT_HOST,
                 port=settings.MQTT_PORT,
