@@ -11,6 +11,22 @@ api.interceptors.request.use(async (config) => {
   return config
 })
 
+let _logoutHandler: (() => Promise<void>) | null = null
+
+export function registrarLogout(fn: () => Promise<void>) {
+  _logoutHandler = fn
+}
+
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    if (error.response?.status === 401 && _logoutHandler) {
+      await _logoutHandler()
+    }
+    return Promise.reject(error)
+  }
+)
+
 // ── Cuidador ───────────────────────────────────────────────────────────────
 
 export const cuidadorService = {
@@ -22,7 +38,7 @@ export const cuidadorService = {
 
   perfil: () => api.get('/cuidadores/perfil'),
 
-  actualizar: (datos: { name?: string; telefono?: string }) =>
+  actualizar: (datos: { name?: string; phone?: string }) =>
     api.put('/cuidadores/actualizar', datos),
 
   logout: () => api.post('/cuidadores/logout').catch(() => {}),
@@ -46,6 +62,8 @@ export const familiarService = {
     api.post('/familiares/verificar', { email, password }),
 
   misGrupos: () => api.get('/familiares/grupos'),
+
+  misPacientes: () => api.get('/familiares/pacientes'),
 }
 
 // ── Pacientes ──────────────────────────────────────────────────────────────
@@ -81,11 +99,12 @@ export const zonaService = {
     paciente_id: string
     centro: { latitud: number; longitud: number }
     radio_metros: number
-  }) => api.post('/zonas-seguras/', datos),
+  }) => api.post('/zonas-seguras/crear', datos),
 
-  eliminar: (id: string) => api.delete(`/zonas-seguras/${id}`),
+  eliminar: (id: string) => api.delete(`/zonas-seguras/eliminar/${id}`),
 
-  toggle: (id: string) => api.patch(`/zonas-seguras/${id}/toggle`),
+  toggle: (id: string, activa: boolean) =>
+    api.patch(`/zonas-seguras/actualizar/${id}`, { activa }),
 }
 
 // ── Alertas ────────────────────────────────────────────────────────────────
@@ -117,7 +136,7 @@ export const dispositivoService = {
 export const grupoService = {
   listar: () => api.get('/grupos/'),
 
-  crear: (datos: { nombre: string; paciente_id?: string }) =>
+  crear: (datos: { nombre: string; paciente_ids?: string[] }) =>
     api.post('/grupos/registrar', datos),
 
   obtener: (id: string) => api.get(`/grupos/${id}`),

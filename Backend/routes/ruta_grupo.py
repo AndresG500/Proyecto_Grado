@@ -2,7 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path
 from models.model_grupo import CrearGrupo, ActualizarGrupo, AgregarCuidador, AgregarPaciente, UbicacionCuidador
 from services.service_grupo import (
-    crear_grupo, eliminar_grupo, obtener_grupo, actualizar_grupo,
+    listar_grupos, crear_grupo, eliminar_grupo, obtener_grupo, actualizar_grupo,
     agregar_cuidador, eliminar_cuidador,
     agregar_paciente,
     guardar_ubicacion_cuidador, obtener_ubicaciones_grupo, obtener_cuidador_mas_cercano
@@ -14,6 +14,27 @@ router = APIRouter(prefix="/grupos", tags=["Grupos"])
 
 
 # --- Endpoints protegidos (requieren JWT) ---
+
+@router.get("/")
+async def listar(cuidador_actual = Depends(get_cuidador_actual)):
+    cuidador_id = str(cuidador_actual["_id"])
+    resultado   = await listar_grupos(cuidador_id)
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
+@router.post("/registrar")
+async def registrar(
+    datos: CrearGrupo,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    datos.cuidador_principal_id = str(cuidador_actual["_id"])
+    resultado = await crear_grupo(datos)
+    if "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
 
 @router.post("/crear")
 async def crear(

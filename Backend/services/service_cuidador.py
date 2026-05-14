@@ -125,7 +125,13 @@ async def verificar_cuidador(email: str, password: str):
         Logger.add_to_log("info", f"Verificación exitosa: {email}")
         return {
             "access_token": token,
-            "token_type": "bearer",
+            "token_type":   "bearer",
+            "cuidador": {
+                "id":    str(cuidador["_id"]),
+                "name":  cuidador.get("name", ""),
+                "email": cuidador.get("email", ""),
+                "phone": cuidador.get("phone", ""),
+            },
         }
 
     except Exception as ex:

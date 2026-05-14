@@ -105,6 +105,9 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
             )
         return
 
+    if ultima_alerta is not None and ultima_alerta.tzinfo is None:
+        ultima_alerta = ultima_alerta.replace(tzinfo=timezone.utc)
+
     if (ultima_alerta is None or
             (ahora - ultima_alerta).total_seconds() >= COOLDOWN_ALERTA_SEGUNDOS):
         await crear_y_despachar_alerta(

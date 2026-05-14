@@ -60,8 +60,7 @@ async def actualizar(
 
 @router.get("/{id}/ubicacion/stream")
 async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)):
-    """SSE: emite la ubicación del paciente en tiempo real."""
-    db = await get_database()
+    db = get_database()
 
     async def generar():
         cola: asyncio.Queue = asyncio.Queue()

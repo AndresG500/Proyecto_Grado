@@ -32,11 +32,11 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         # ── 2. No está vinculado aún → anunciarlo en DispositivosDisponibles ──
         #       Usamos upsert para no duplicar si ya estaba anunciado.
         #       Actualizamos dispositivo_detectado para refrescar la ventana de 5 min.
-        await db["DispositivosDisponibles"].update_one(
+        result = await db["DispositivosDisponibles"].update_one(
             {"id_dispositivo": id_dispositivo},
             {
                 "$set": {
-                    "id_dispositivo":      id_dispositivo,
+                    "id_dispositivo":        id_dispositivo,
                     "dispositivo_detectado": datetime.utcnow(),
                 },
                 "$setOnInsert": {
@@ -45,10 +45,11 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
             },
             upsert=True,
         )
-        Logger.add_to_log(
-            "info",
-            f"Dispositivo no vinculado, anunciado en DispositivosDisponibles: {id_dispositivo}",
-        )
+        if result.upserted_id:
+            Logger.add_to_log(
+                "info",
+                f"Nuevo dispositivo detectado (sin vincular): {id_dispositivo}",
+            )
         # No hay paciente asociado todavía → no hay nada más que procesar
         return
 

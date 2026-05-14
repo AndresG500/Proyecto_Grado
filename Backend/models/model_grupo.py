@@ -6,7 +6,7 @@ class GrupoBase(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=100)
 
 class CrearGrupo(GrupoBase):
-    cuidador_principal_id: str = Field(..., description="Cuidador que crea el grupo")
+    cuidador_principal_id: Optional[str] = Field(None, description="Cuidador que crea el grupo")
     paciente_ids: list[str] = Field(default_factory=list)
 
 class RespuestaGrupo(GrupoBase):
@@ -29,7 +29,7 @@ class AgregarPaciente(BaseModel):
     paciente_id: str = Field(...)
 
 class UbicacionCuidador(BaseModel):
-    cuidador_id: str = Field(...)
+    cuidador_id: Optional[str] = Field(None)
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
     timestamp: datetime = Field(default_factory=datetime.utcnow)

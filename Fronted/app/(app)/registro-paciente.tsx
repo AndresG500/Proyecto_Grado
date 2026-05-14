@@ -20,15 +20,13 @@ export default function RegistroPacienteScreen() {
     if (nombre_paciente.trim().length < 2) { setError('El nombre debe tener al menos 2 caracteres.'); return }
     const edadNum = parseInt(edad_paciente)
     if (!edad_paciente || isNaN(edadNum) || edadNum < 1 || edadNum > 120) { setError('Ingresa una edad válida.'); return }
-    if (!cuidador?.id) { setError('No se identificó el cuidador. Inicia sesión nuevamente.'); return }
-
     setLoading(true); setError('')
     try {
       await pacienteService.registrar({
         nombre_paciente: nombre_paciente.trim(),
         edad_paciente:   edadNum,
         enfermedad:     enfermedad.trim() || undefined,
-        id_cuidador:    cuidador.id,
+        id_cuidador:    cuidador?.id ?? '',
       })
       router.replace('/(app)/vincular-dispositivo' as any)
     } catch (err: any) {

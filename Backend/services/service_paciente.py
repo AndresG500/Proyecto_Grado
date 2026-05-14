@@ -153,7 +153,8 @@ async def listar_pacientes(cuidador_email: str):
 
         pacientes = []
         async for paciente in cursor:
-            paciente["_id"] = str(paciente["_id"])
+            paciente["id_paciente"] = str(paciente["_id"])
+            del paciente["_id"]
             pacientes.append(paciente)
 
         Logger.add_to_log("info", f"Pacientes listados para cuidador: {cuidador_email}")

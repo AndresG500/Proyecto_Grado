@@ -79,10 +79,6 @@ async def obtener_zonas_por_paciente(paciente_id: str, cuidador_email: str) -> l
             del zona["_id"]
             zonas.append(zona)
 
-        if not zonas:
-            Logger.add_to_log("warn", f"Sin zonas para paciente: {paciente_id}")
-            return {"mensaje": "No se encontraron zonas seguras para este paciente"}
-
         Logger.add_to_log("info", f"Zonas obtenidas para paciente: {paciente_id}")
         return zonas
 

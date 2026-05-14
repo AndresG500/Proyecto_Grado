@@ -1,5 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import axios from 'axios'
+import { registrarLogout } from '@/services/api'
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000'
 
 interface Cuidador {
   id?: string
@@ -29,15 +33,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { init() }, [])
 
+  useEffect(() => { registrarLogout(logout) }, [])
+
   const init = async () => {
     try {
-      const t = await AsyncStorage.getItem('token')
-      const c = await AsyncStorage.getItem('cuidador')
-      const tipo = await AsyncStorage.getItem('tipoUsuario')
-      if (t) { 
-        setToken(t); 
-        setCuidador(c ? JSON.parse(c) : null)
-        setTipoUsuario((tipo as TipoUsuario) || 'cuidador')
+      const t    = await AsyncStorage.getItem('token')
+      const c    = await AsyncStorage.getItem('cuidador')
+      const tipo = await AsyncStorage.getItem('tipoUsuario') as TipoUsuario | null
+
+      if (t) {
+        const endpoint = tipo === 'familiar' ? '/familiares/grupos' : '/cuidadores/perfil'
+        try {
+          await axios.get(`${BASE_URL}${endpoint}`, {
+            headers: { Authorization: `Bearer ${t}` },
+            timeout: 5000,
+          })
+          setToken(t)
+          setCuidador(c ? JSON.parse(c) : null)
+          setTipoUsuario(tipo ?? 'cuidador')
+        } catch {
+          await AsyncStorage.multiRemove(['token', 'cuidador', 'tipoUsuario'])
+        }
       }
     } finally {
       setLoading(false)

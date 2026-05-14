@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"2432a3defbf94d9fa75ff4bd101e7984","collectionName":"DispositivosDisponibles","type":"collection"}

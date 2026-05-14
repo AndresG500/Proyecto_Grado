@@ -7,9 +7,10 @@ import { Colors } from '@/constants/Colors'
 import { alertaService } from '@/services/api'
 
 const ESTADO_COLOR: Record<string, string> = {
-  ACTIVA:   Colors.error,
-  ATENDIDA: Colors.warning,
-  RESUELTA: Colors.success,
+  enviada:  Colors.error,
+  pendiente: Colors.warning,
+  resuelta: Colors.success,
+  fallida:  Colors.textSecondary,
 }
 
 export default function AlertasScreen() {
@@ -34,7 +35,7 @@ export default function AlertasScreen() {
     setResolviendo(id)
     try {
       await alertaService.resolver(id)
-      setAlertas((prev) => prev.map((a) => a.id === id ? { ...a, estado: 'RESUELTA' } : a))
+      setAlertas((prev) => prev.map((a) => a.id === id ? { ...a, estado: 'resuelta' } : a))
     } finally {
       setResolviendo(null)
     }
@@ -88,7 +89,7 @@ export default function AlertasScreen() {
                 )}
               </View>
 
-              {item.estado === 'ACTIVA' && (
+              {item.estado === 'enviada' && (
                 <TouchableOpacity
                   style={[styles.resolverBtn, resolviendo === item.id && styles.resolverBtnLoading]}
                   onPress={() => handleResolver(item.id)}

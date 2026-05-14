@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from services.service_alerta import listar_alertas, obtener_alerta, actualizar_estado
-from models.model_alertas import RespuestaAlerta, AtenderAlerta
+from models.model_alertas import RespuestaAlerta
 from security.dependencies import get_cuidador_actual
 
 router = APIRouter(prefix="/alertas", tags=["alertas"])

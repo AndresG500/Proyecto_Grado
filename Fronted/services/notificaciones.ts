@@ -43,7 +43,7 @@ export async function registrarToken(): Promise<void> {
 
     await axios.patch(
       `${API_URL}/cuidadores/fcm-token`,
-      { fcm_token: token.data },
+      { token: token.data },
       { headers: { Authorization: `Bearer ${tokenStr}` } }
     );
   } catch (error) {

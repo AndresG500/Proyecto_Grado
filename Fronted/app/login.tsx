@@ -8,7 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useAuth } from '@/context/AuthContext'
-import { cuidadorService } from '@/services/api'
+import { cuidadorService, familiarService } from '@/services/api'
+import { registrarToken } from '@/utils/notificaciones'
 import { Colors } from '@/constants/Colors'
 
 export default function LoginScreen() {
@@ -26,20 +27,39 @@ export default function LoginScreen() {
     }
     setLoading(true)
     setError('')
+
+    let data: any = null
+    let tipo: 'cuidador' | 'familiar' = 'cuidador'
+
     try {
-      const { data } = await cuidadorService.login(email.trim().toLowerCase(), password)
+      const res = await cuidadorService.login(email.trim().toLowerCase(), password)
+      data = res.data
+      tipo = 'cuidador'
+    } catch {
+      try {
+        const res = await familiarService.login(email.trim().toLowerCase(), password)
+        data = res.data
+        tipo = 'familiar'
+      } catch (familiarErr: any) {
+        const msg =
+          familiarErr.response?.data?.detail  ??
+          familiarErr.response?.data?.mensaje ??
+          familiarErr.response?.data?.error   ??
+          'Credenciales inválidas. Verifica tu correo y contraseña.'
+        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+        setLoading(false)
+        return
+      }
+    }
+
+    try {
       const token    = data.token ?? data.access_token ?? data.jwt
-      const cuidador = data.cuidador ?? { email: email.trim() }
-      const tipo     = data.tipo || 'cuidador'
-      await login(token, cuidador, tipo)
+      const cuidador = data.cuidador ?? data.familiar ?? { email: email.trim() }
+      await login(token, cuidador, data.tipo ?? tipo)
+      registrarToken().catch(() => {})
       router.replace('/(app)/' as any)
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.detail   ??
-        err.response?.data?.mensaje  ??
-        err.response?.data?.error    ??
-        'Credenciales inválidas. Intenta de nuevo.'
-      setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } catch {
+      setError('Error inesperado al iniciar sesión.')
     } finally {
       setLoading(false)
     }

@@ -33,8 +33,6 @@ async def obtener_zonas(
     resultado = await obtener_zonas_por_paciente(paciente_id, cuidador_actual["email"])
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
-    if isinstance(resultado, dict) and "mensaje" in resultado:
-        raise HTTPException(status_code=404, detail=resultado["mensaje"])
     return resultado
 
 

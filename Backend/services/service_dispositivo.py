@@ -1,58 +1,35 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
 from database.database import get_database  # ← corregido
-from models.model_dispositivo import CrearDispositivo, ActualizarDispositivo
+from models.model_dispositivo import ActualizarDispositivo
 from utils.Logger import Logger
 
 MINUTOS_DISPONIBLE = 5
 
 
-async def registrar_dispositivo(datos: CrearDispositivo):
-    try:
-        coleccion = get_database()["Dispositivos"]
-        dispositivo = await coleccion.find_one({"id_dispositivo": datos.id_dispositivo})
-        if dispositivo:
-            Logger.add_to_log("warn", f"Dispositivo ya registrado: {datos.id_dispositivo}")
-            return {"mensaje": "Este ID de dispositivo ya ha sido registrado"}
-
-        await coleccion.insert_one({
-            "id_dispositivo":     datos.id_dispositivo,
-            "paciente_id":        datos.paciente_id,
-            "estado":             datos.estado,
-            "ultima_localizacion": None,
-            "ultima_conexion":    None,
-            "nivel_bateria":      None,
-            "created_at":         datetime.utcnow()
-        })
-
-        Logger.add_to_log("info", f"Dispositivo registrado: {datos.id_dispositivo}")
-        return {"mensaje": "Dispositivo registrado exitosamente"}
-
-    except Exception as ex:
-        Logger.add_to_log("error", f"Error al registrar dispositivo: {ex}")
-        return {"error": f"No se pudo registrar el dispositivo: {ex}"}
-
-
 async def registrar_dispositivo(id_dispositivo: str):
     try:
         db = get_database()
-        coleccion = db["Dispositivos"]
-        existente = await coleccion.find_one({"id_dispositivo": id_dispositivo})
-        if existente:
-            Logger.add_to_log("warn", f"Dispositivo ya registrado: {id_dispositivo}")
-            return {"mensaje": "Dispositivo ya registrado", "id_dispositivo": id_dispositivo}
+        existente_vinculado = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
+        if existente_vinculado:
+            Logger.add_to_log("warn", f"Dispositivo ya vinculado: {id_dispositivo}")
+            return {"mensaje": "El dispositivo ya está vinculado a un paciente", "id_dispositivo": id_dispositivo}
 
-        await coleccion.insert_one({
-            "id_dispositivo":      id_dispositivo,
-            "paciente_id":          None,
-            "estado":               True,
-            "ultima_localizacion":  None,
-            "ultima_conexion":      datetime.utcnow(),
-            "nivel_bateria":        None,
-            "created_at":           datetime.utcnow()
-        })
-        Logger.add_to_log("info", f"Dispositivo registrado: {id_dispositivo}")
-        return {"mensaje": "Dispositivo registrado exitosamente", "id_dispositivo": id_dispositivo}
+        await db["DispositivosDisponibles"].update_one(
+            {"id_dispositivo": id_dispositivo},
+            {
+                "$set": {
+                    "id_dispositivo":        id_dispositivo,
+                    "dispositivo_detectado": datetime.utcnow(),
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.utcnow(),
+                }
+            },
+            upsert=True,
+        )
+        Logger.add_to_log("info", f"Dispositivo anunciado en DispositivosDisponibles: {id_dispositivo}")
+        return {"mensaje": "Dispositivo disponible para vinculación", "id_dispositivo": id_dispositivo}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al registrar dispositivo: {ex}")
@@ -209,28 +186,17 @@ async def obtener_dispositivos_disponibles() -> list:
             "id_dispositivo", {"paciente_id": {"$ne": None}}
         )
 
-        ids_en_disponibles = await disponibles_col.distinct("id_dispositivo")
-
         corte = datetime.utcnow() - timedelta(minutes=MINUTOS_DISPONIBLE)
 
-        cursor1 = disponibles_col.find({
+        cursor = disponibles_col.find({
             "dispositivo_detectado": {"$gte": corte},
-            "id_dispositivo":        {"$nin": ids_ya_vinculados}
+            "id_dispositivo":        {"$nin": ids_ya_vinculados},
         })
 
         disponibles = [
             {"id_dispositivo": d["id_dispositivo"], "dispositivo_detectado": d["dispositivo_detectado"]}
-            async for d in cursor1
+            async for d in cursor
         ]
-
-        ids_disponibles_set = set(ids_en_disponibles)
-        cursor2 = dispositivos_col.find({
-            "paciente_id": None,
-            "id_dispositivo": {"$nin": list(ids_disponibles_set)}
-        })
-
-        async for d in cursor2:
-            disponibles.append({"id_dispositivo": d["id_dispositivo"], "dispositivo_detectado": None})
 
         Logger.add_to_log("info", f"Dispositivos disponibles encontrados: {len(disponibles)}")
         return disponibles

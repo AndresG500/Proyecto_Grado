@@ -1,9 +1,33 @@
 from datetime import datetime
+import random
+import string
 from database.database import get_database
 from models.model_grupo import CrearGrupo, ActualizarGrupo, UbicacionCuidador
 from bson import ObjectId
 from utils.Logger import Logger
 from utils.geo import calcular_distancia
+
+
+async def listar_grupos(cuidador_id: str) -> list:
+    try:
+        db         = get_database()
+        col_grupos = db["Grupos"]
+        cursor     = col_grupos.find({"cuidador_ids": cuidador_id})
+        grupos = []
+        async for g in cursor:
+            g["id"] = str(g["_id"])
+            del g["_id"]
+            grupos.append(g)
+        Logger.add_to_log("info", f"Grupos listados para cuidador: {cuidador_id}")
+        return grupos
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al listar grupos: {ex}")
+        return {"error": f"No se pudieron listar los grupos: {ex}"}
+
+
+def _generar_codigo() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return "FAM-" + "".join(random.choices(chars, k=6))
 
 
 async def crear_grupo(datos: CrearGrupo):
@@ -34,6 +58,8 @@ async def crear_grupo(datos: CrearGrupo):
             "cuidador_principal_id": datos.cuidador_principal_id,
             "cuidador_ids":          [datos.cuidador_principal_id],
             "paciente_ids":          datos.paciente_ids,
+            "familiar_ids":          [],
+            "codigo":                _generar_codigo(),
             "created_at":            datetime.utcnow()
         })
 

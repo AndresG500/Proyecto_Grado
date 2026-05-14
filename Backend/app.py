@@ -13,6 +13,7 @@ from routes.ruta_historial import router as historial_router
 from routes.ruta_zonasegura import router as zona_segura_router
 from routes.ruta_grupo import router as grupo_router
 from routes.ruta_alerta import router as alerta_router
+from routes.ruta_familiar import router as familiar_router
 from services.service_alerta import reenviar_alertas_activas
 
 
@@ -92,6 +93,7 @@ app.include_router(historial_router)
 app.include_router(zona_segura_router)
 app.include_router(grupo_router)
 app.include_router(alerta_router)
+app.include_router(familiar_router)
 
 
 @app.get("/")

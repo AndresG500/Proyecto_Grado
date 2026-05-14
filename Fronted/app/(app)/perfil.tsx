@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { useAuth } from '@/context/AuthContext'
+import { cuidadorService } from '@/services/api'
 
 export default function PerfilScreen() {
   const { cuidador, logout } = useAuth()
@@ -16,16 +17,22 @@ export default function PerfilScreen() {
 
   const handleGuardar = async () => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 800))
-    setLoading(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    try {
+      await cuidadorService.actualizar({ name: nombre, phone: telefono })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      // el backend devuelve error silencioso; el usuario puede reintentar
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleLogout = () => {
     Alert.alert('Cerrar sesión', '¿Estás seguro de que quieres salir?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Cerrar sesión', style: 'destructive', onPress: async () => {
+          await cuidadorService.logout()
           await logout()
           router.replace('/login' as any)
         }},

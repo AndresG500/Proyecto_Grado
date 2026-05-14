@@ -10,12 +10,6 @@ interface UbicacionPaciente {
   timestamp: string;
 }
 
-interface SSEDatos {
-  latitud: number;
-  longitud: number;
-  timestamp: string;
-}
-
 export const useSSEUbicacion = (pacienteId: string | null) => {
   const [ubicacion, setUbicacion] = useState<UbicacionPaciente | null>(null);
   const [conectado, setConectado] = useState<boolean>(false);
@@ -45,10 +39,10 @@ export const useSSEUbicacion = (pacienteId: string | null) => {
       es.addEventListener('message', (e) => {
         if (cancelado || !e.data) return;
         try {
-          const datos: SSEDatos = JSON.parse(e.data);
+          const datos = JSON.parse(e.data);
           setUbicacion({
-            latitude: datos.latitud,
-            longitude: datos.longitud,
+            latitude:  datos.latitud  ?? datos.lat,
+            longitude: datos.longitud ?? datos.lng,
             timestamp: datos.timestamp,
           });
         } catch (_) {}

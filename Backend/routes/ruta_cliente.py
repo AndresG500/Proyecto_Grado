@@ -25,8 +25,9 @@ async def eliminar(email: str, cuidador_actual = Depends(get_cuidador_actual)):
     return resultado
 
 @router.put("/actualizar")
-async def actualizar( email: str, datos: ActualizarCuidador,cuidador_actual = Depends(get_cuidador_actual)):
-    resultado = await actualizar_cuidador(email, datos, cuidador_actual["email"])
+async def actualizar(datos: ActualizarCuidador, cuidador_actual = Depends(get_cuidador_actual)):
+    email = cuidador_actual["email"]
+    resultado = await actualizar_cuidador(email, datos, email)
     if "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     return resultado
@@ -41,6 +42,8 @@ async def verificar(datos: VerificarCuidador):
     resultado = await verificar_cuidador(datos.email, datos.password)
     if "error" in resultado:
         raise HTTPException(status_code=401, detail=resultado["error"])
+    if "mensaje" in resultado:
+        raise HTTPException(status_code=401, detail=resultado["mensaje"])
     return resultado
 
 
@@ -59,5 +62,5 @@ async def actualizar_fcm_token(
     datos: FCMToken,
     cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
-    email = cuidador_actual.get("sub")
+    email = cuidador_actual.get("email")
     return await actualizar_fcm(email, datos.token)
