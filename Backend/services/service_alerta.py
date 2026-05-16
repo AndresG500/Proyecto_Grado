@@ -284,31 +284,55 @@ async def listar_alertas_familiar(familiar_id: str) -> list[dict]:
     for a in alertas:
         a["id"] = str(a["_id"])
         del a["_id"]
+        a["paciente_id"]  = str(a.get("paciente_id", ""))
+        if a.get("zonasegura_id"):
+            a["zonasegura_id"] = str(a["zonasegura_id"])
+        a["cuidadores_notificados"] = [str(c) for c in a.get("cuidadores_notificados", [])]
     return alertas
 
 
-async def listar_alertas(paciente_id: Optional[str] = None) -> list[dict]:
-    db               = get_database()
-    coleccion_alertas = db["Alertas"]
-    query = {}
+async def _paciente_ids_del_cuidador(cuidador_id: str) -> list[str]:
+    db     = get_database()
+    grupos = await db["Grupos"].find({"cuidador_ids": cuidador_id}).to_list(length=None)
+    ids: list[str] = []
+    for g in grupos:
+        ids.extend(g.get("paciente_ids", []))
+    return list(set(ids))
+
+
+async def listar_alertas(cuidador_id: str, paciente_id: Optional[str] = None) -> list[dict]:
+    db            = get_database()
+    paciente_ids  = await _paciente_ids_del_cuidador(cuidador_id)
+    query: dict   = {"paciente_id": {"$in": paciente_ids}}
     if paciente_id:
-        query["paciente_id"] = to_str_id(paciente_id)
-    cursor = coleccion_alertas.find(query).sort("timestamp", -1)
-    return await cursor.to_list(length=None)
+        pid = to_str_id(paciente_id)
+        if pid not in paciente_ids:
+            return []
+        query["paciente_id"] = pid
+    return await db["Alertas"].find(query).sort("timestamp", -1).to_list(length=None)
 
 
-async def obtener_alerta(alerta_id: str) -> Optional[dict]:
-    db = get_database()
-    return await db["Alertas"].find_one({"_id": ObjectId(alerta_id)})
+async def obtener_alerta(alerta_id: str, cuidador_id: str) -> Optional[dict]:
+    db     = get_database()
+    alerta = await db["Alertas"].find_one({"_id": ObjectId(alerta_id)})
+    if not alerta:
+        return None
+    paciente_ids = await _paciente_ids_del_cuidador(cuidador_id)
+    if str(alerta.get("paciente_id")) not in paciente_ids:
+        return None
+    return alerta
 
 
-async def actualizar_estado(alerta_id: str, nuevo_estado: str) -> Optional[dict]:
+async def actualizar_estado(alerta_id: str, nuevo_estado: str, cuidador_id: str) -> Optional[dict]:
+    alerta = await obtener_alerta(alerta_id, cuidador_id)
+    if not alerta:
+        return None
     db = get_database()
     await db["Alertas"].update_one(
         {"_id": ObjectId(alerta_id)},
         {"$set": {"estado": nuevo_estado}},
     )
-    return await obtener_alerta(alerta_id)
+    return await obtener_alerta(alerta_id, cuidador_id)
 
 
 # ─────────────────────────────────────────────────────────────────────

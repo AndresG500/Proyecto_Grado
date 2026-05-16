@@ -60,6 +60,10 @@ async def actualizar(
 
 @router.get("/{id}/ubicacion/stream")
 async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)):
+    verificacion = await obtener_paciente(id, cuidador_actual["email"])
+    if "error" in verificacion:
+        raise HTTPException(status_code=403, detail=verificacion["error"])
+
     db = get_database()
 
     async def generar():

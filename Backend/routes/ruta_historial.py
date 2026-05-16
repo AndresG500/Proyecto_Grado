@@ -1,22 +1,11 @@
 # routes/route_historial_ubicacion.py
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path
-from models.model_historial import HistorialUbicacionBase
-from services.service_historial import registrar_ubicacion, obtener_ultima_ubicacion, obtener_historial_ubicaciones, eliminar_historial_paciente, obtener_historial_ubicaciones_familiar
+from services.service_historial import obtener_ultima_ubicacion, obtener_historial_ubicaciones, eliminar_historial_paciente, obtener_historial_ubicaciones_familiar
 from security.dependencies import get_cuidador_actual, get_familiar_actual
 
 MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 router = APIRouter(prefix="/historial-ubicaciones", tags=["Historial de Ubicaciones"])
-
-
-# --- Endpoint público para dispositivos IoT ---
-
-@router.post("/registrar")
-async def registrar(datos: HistorialUbicacionBase):
-    resultado = await registrar_ubicacion(datos)
-    if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
-    return resultado
 
 
 # --- Endpoints protegidos (requieren JWT) ---

@@ -28,18 +28,18 @@ async def alertas_familiar(familiar_actual = Depends(get_familiar_actual)):
 @router.get("/", response_model=list[RespuestaAlerta])
 async def alertas_listadas(
     paciente_id: Optional[str] = None,
-    _: dict = Depends(get_cuidador_actual),
+    cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
-    alertas = await listar_alertas(paciente_id)
+    alertas = await listar_alertas(str(cuidador_actual["_id"]), paciente_id)
     return [_serializar(a) for a in alertas]
 
 
 @router.get("/{alerta_id}", response_model=RespuestaAlerta)
 async def alertas_obtenidas(
     alerta_id: str,
-    _: dict = Depends(get_cuidador_actual),
+    cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
-    alerta = await obtener_alerta(alerta_id)
+    alerta = await obtener_alerta(alerta_id, str(cuidador_actual["_id"]))
     if not alerta:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alerta no encontrada")
     return _serializar(alerta)
@@ -48,9 +48,9 @@ async def alertas_obtenidas(
 @router.patch("/{alerta_id}/resolver", response_model=RespuestaAlerta)
 async def resolver_alerta(
     alerta_id: str,
-    _: dict = Depends(get_cuidador_actual),
+    cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
-    alerta = await actualizar_estado(alerta_id, "resuelta")
+    alerta = await actualizar_estado(alerta_id, "resuelta", str(cuidador_actual["_id"]))
     if not alerta:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alerta no encontrada")
     return _serializar(alerta)

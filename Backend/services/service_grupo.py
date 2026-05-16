@@ -1,5 +1,5 @@
 from datetime import datetime
-import random
+import secrets
 import string
 from database.database import get_database
 from models.model_grupo import CrearGrupo, ActualizarGrupo, UbicacionCuidador, UbicacionFamiliar
@@ -27,7 +27,7 @@ async def listar_grupos(cuidador_id: str) -> list:
 
 def _generar_codigo() -> str:
     chars = string.ascii_uppercase + string.digits
-    return "FAM-" + "".join(random.choices(chars, k=6))
+    return "FAM-" + "".join(secrets.choice(chars) for _ in range(6))
 
 
 async def crear_grupo(datos: CrearGrupo):

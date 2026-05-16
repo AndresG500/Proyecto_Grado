@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import asyncio
+import os
+import sentry_sdk
 
 from MQTT.subscriber import mqtt_subscriber_task
 from database.database import close_database, get_database
@@ -15,6 +18,11 @@ from routes.ruta_grupo import router as grupo_router
 from routes.ruta_alerta import router as alerta_router
 from routes.ruta_familiar import router as familiar_router
 from services.service_alerta import reenviar_alertas_activas
+from utils.Logger import Logger
+
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(dsn=_sentry_dsn, traces_sample_rate=0.2)
 
 
 rate_limit_store: dict[str, list] = {}
@@ -23,8 +31,7 @@ RATE_WINDOW = 60
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    return forwarded.split(",")[0].strip() if forwarded else request.client.host
+    return request.client.host
 
 
 async def tarea_alertas():
@@ -55,11 +62,15 @@ async def lifespan(app: FastAPI):
     await close_database()
 
 
+_produccion = os.getenv("ENVIRONMENT") == "production"
+
 app = FastAPI(
     title="UbiLife API",
     description="Backend para el sistema de rastreo GPS de pacientes con Alzheimer",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None  if _produccion else "/docs",
+    redoc_url=None if _produccion else "/redoc",
 )
 
 
@@ -84,6 +95,20 @@ async def rate_limit_middleware(request: Request, call_next):
 
     response = await call_next(request)
     return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def handler_http(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 500:
+        Logger.add_to_log("error", f"Error interno [{request.method} {request.url.path}]: {exc.detail}")
+        return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def handler_excepcion_global(request: Request, exc: Exception):
+    Logger.add_to_log("error", f"Excepción no manejada [{request.method} {request.url.path}]: {exc}")
+    return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
 
 
 app.include_router(cuidador_router)

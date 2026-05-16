@@ -4,7 +4,9 @@ from services.service_familiar import (
     registrar_familiar, verificar_familiar,
     listar_grupos_familiar, listar_pacientes_familiar,
 )
-from security.dependencies import get_familiar_actual
+from services.service_auth import revocar_token
+from security.dependencies import get_familiar_actual, oauth2_scheme
+from security.jwt_handler import verificar_token
 
 router = APIRouter(prefix="/familiares", tags=["Familiares"])
 
@@ -23,6 +25,17 @@ async def verificar(datos: VerificarFamiliar):
     if "mensaje" in resultado:
         raise HTTPException(status_code=401, detail=resultado["mensaje"])
     return resultado
+
+
+@router.post("/logout")
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    familiar_actual=Depends(get_familiar_actual),
+):
+    datos = verificar_token(token)
+    if datos:
+        await revocar_token(datos.get("jti"), datos.get("exp"))
+    return {"mensaje": "Sesión cerrada exitosamente"}
 
 
 @router.get("/grupos")

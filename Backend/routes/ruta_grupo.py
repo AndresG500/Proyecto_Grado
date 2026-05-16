@@ -154,6 +154,11 @@ async def obtener_ubicaciones(grupo_id: str, cuidador_actual = Depends(get_cuida
 
 @router.get("/{grupo_id}/miembros")
 async def get_miembros(grupo_id: MongoId, cuidador_actual = Depends(get_cuidador_actual)):
+    grupo = await obtener_grupo(grupo_id)
+    if "error" in grupo:
+        raise HTTPException(status_code=404, detail=grupo["error"])
+    if str(cuidador_actual["_id"]) not in grupo.get("cuidador_ids", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso a este grupo")
     resultado = await obtener_miembros_grupo(grupo_id)
     if "error" in resultado:
         raise HTTPException(status_code=404, detail=resultado["error"])
@@ -162,6 +167,11 @@ async def get_miembros(grupo_id: MongoId, cuidador_actual = Depends(get_cuidador
 
 @router.get("/{grupo_id}/miembros/familiar")
 async def get_miembros_familiar(grupo_id: MongoId, familiar_actual = Depends(get_familiar_actual)):
+    grupo = await obtener_grupo(grupo_id)
+    if "error" in grupo:
+        raise HTTPException(status_code=404, detail=grupo["error"])
+    if str(familiar_actual["_id"]) not in grupo.get("familiar_ids", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso a este grupo")
     resultado = await obtener_miembros_grupo(grupo_id)
     if "error" in resultado:
         raise HTTPException(status_code=404, detail=resultado["error"])
