@@ -94,9 +94,3 @@ async def anunciar_dispositivo(id_dispositivo: str):
         raise HTTPException(status_code=500, detail=resultado["error"])
     return {"mensaje": "Dispositivo anunciado"}
 
-@router.post("/registrar")
-async def registrar_dispositivo(id_dispositivo: str):
-    resultado = await service_dispositivo.registrar_dispositivo(id_dispositivo)
-    if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
-    return resultado

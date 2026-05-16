@@ -86,6 +86,8 @@ export const pacienteService = {
   ultimaUbicacion: (id: string) => api.get(`/historial-ubicaciones/ultima/${id}`),
 
   ruta: (id: string) => api.get(`/historial-ubicaciones/ruta/${id}`),
+
+  rutaFamiliar: (id: string) => api.get(`/historial-ubicaciones/ruta-familiar/${id}`),
 }
 
 // ── Zonas seguras ──────────────────────────────────────────────────────────
@@ -105,6 +107,8 @@ export const zonaService = {
 
   toggle: (id: string, activa: boolean) =>
     api.patch(`/zonas-seguras/actualizar/${id}`, { activa }),
+
+  listarFamiliar: () => api.get('/zonas-seguras/familiar/'),
 }
 
 // ── Alertas ────────────────────────────────────────────────────────────────
@@ -116,6 +120,8 @@ export const alertaService = {
   },
 
   resolver: (id: string) => api.patch(`/alertas/${id}/resolver`),
+
+  listarFamiliar: () => api.get('/alertas/familiar/'),
 }
 
 // ── Dispositivos ───────────────────────────────────────────────────────────
@@ -144,10 +150,14 @@ export const grupoService = {
   eliminar: (id: string) => api.delete(`/grupos/${id}`),
 
   agregarMiembro: (id: string, cuidadorId: string) =>
-    api.post(`/grupos/${id}/miembros`, { cuidador_id: cuidadorId }),
+    api.post(`/grupos/${id}/cuidadores`, { cuidador_id: cuidadorId }),
 
   unirseConCodigo: (codigo: string) =>
     api.post('/grupos/unirse', { codigo }),
+
+  miembros: (id: string) => api.get(`/grupos/${id}/miembros`),
+
+  miembrosFamiliar: (id: string) => api.get(`/grupos/${id}/miembros/familiar`),
 }
 
 export default api

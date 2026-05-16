@@ -1,8 +1,14 @@
 import { useEffect } from 'react'
+import { LogBox } from 'react-native'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { configurarListeners } from '@/utils/notificaciones'
+
+LogBox.ignoreLogs([
+  'expo-notifications',
+  '`expo-notifications` functionality is not fully supported in Expo Go',
+])
 
 const RUTAS_PUBLICAS = ['login', 'register', 'register-cuidador', 'register-familiar', 'elegir-rol']
 

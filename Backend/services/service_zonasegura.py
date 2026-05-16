@@ -19,6 +19,24 @@ def verificar_si_dentro(latitud_paciente: float, longitud_paciente: float,
     return distancia <= radio_metros
 
 
+async def obtener_zonas_familiar(familiar_id: str) -> list:
+    db = get_database()
+    grupos = await db["Grupos"].find({"familiar_ids": familiar_id}).to_list(length=None)
+    if not grupos:
+        return []
+    paciente_ids: list[str] = []
+    for g in grupos:
+        paciente_ids.extend(g.get("paciente_ids", []))
+    if not paciente_ids:
+        return []
+    zonas = []
+    async for zona in db["ZonasSeguras"].find({"paciente_id": {"$in": paciente_ids}}):
+        zona["id"] = str(zona["_id"])
+        del zona["_id"]
+        zonas.append(zona)
+    return zonas
+
+
 async def verificar_paciente_pertenece_a_cuidador(paciente_id: str, cuidador_email: str) -> bool:
     try:
         db = get_database()

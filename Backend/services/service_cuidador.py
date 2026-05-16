@@ -116,7 +116,7 @@ async def verificar_cuidador(email: str, password: str):
             Logger.add_to_log("warn", f"Verificación fallida: {email}")
             return {"mensaje": "Credenciales inválidas"}
 
-        if not cuidador.get("is_active", True):
+        if not cuidador.get("activo", True):
             Logger.add_to_log("warn", f"Intento de login en cuenta inactiva: {email}")
             return {"mensaje": "Credenciales inválidas"}
 

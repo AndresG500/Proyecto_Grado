@@ -268,6 +268,25 @@ async def crear_y_despachar_alerta(
 # OPERACIONES PARA EL ROUTER HTTP
 # ─────────────────────────────────────────────────────────────────────
 
+async def listar_alertas_familiar(familiar_id: str) -> list[dict]:
+    db = get_database()
+    grupos = await db["Grupos"].find({"familiar_ids": familiar_id}).to_list(length=None)
+    if not grupos:
+        return []
+    paciente_ids: list[str] = []
+    for g in grupos:
+        paciente_ids.extend(g.get("paciente_ids", []))
+    if not paciente_ids:
+        return []
+    alertas = await db["Alertas"].find(
+        {"paciente_id": {"$in": paciente_ids}}
+    ).sort("timestamp", -1).to_list(length=None)
+    for a in alertas:
+        a["id"] = str(a["_id"])
+        del a["_id"]
+    return alertas
+
+
 async def listar_alertas(paciente_id: Optional[str] = None) -> list[dict]:
     db               = get_database()
     coleccion_alertas = db["Alertas"]

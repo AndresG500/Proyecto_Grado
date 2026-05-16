@@ -2,8 +2,8 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path
 from models.model_historial import HistorialUbicacionBase
-from services.service_historial import registrar_ubicacion, obtener_ultima_ubicacion, obtener_historial_ubicaciones, eliminar_historial_paciente
-from security.dependencies import get_cuidador_actual
+from services.service_historial import registrar_ubicacion, obtener_ultima_ubicacion, obtener_historial_ubicaciones, eliminar_historial_paciente, obtener_historial_ubicaciones_familiar
+from security.dependencies import get_cuidador_actual, get_familiar_actual
 
 MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 router = APIRouter(prefix="/historial-ubicaciones", tags=["Historial de Ubicaciones"])
@@ -40,6 +40,19 @@ async def obtener_historial(
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await obtener_historial_ubicaciones(paciente_id, cuidador_actual["email"])
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    if isinstance(resultado, dict) and "mensaje" in resultado:
+        raise HTTPException(status_code=404, detail=resultado["mensaje"])
+    return resultado
+
+
+@router.get("/ruta-familiar/{paciente_id}")
+async def obtener_historial_familiar(
+    paciente_id: MongoId,
+    familiar_actual = Depends(get_familiar_actual)
+):
+    resultado = await obtener_historial_ubicaciones_familiar(paciente_id, str(familiar_actual["_id"]))
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     if isinstance(resultado, dict) and "mensaje" in resultado:

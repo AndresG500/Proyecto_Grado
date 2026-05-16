@@ -18,7 +18,7 @@ from services.service_alerta import reenviar_alertas_activas
 
 
 rate_limit_store: dict[str, list] = {}
-RATE_LIMIT = 30
+RATE_LIMIT = 120
 RATE_WINDOW = 60
 
 

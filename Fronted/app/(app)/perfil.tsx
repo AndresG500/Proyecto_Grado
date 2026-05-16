@@ -34,7 +34,7 @@ export default function PerfilScreen() {
       { text: 'Cerrar sesión', style: 'destructive', onPress: async () => {
           await cuidadorService.logout()
           await logout()
-          router.replace('/login' as any)
+          // AuthGuard detecta token === null y redirige a /login automáticamente
         }},
     ])
   }

@@ -1,29 +1,38 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native'
 import WebView from 'react-native-webview'
-import { DrawerActions, useNavigation } from '@react-navigation/native'
+import { DrawerActions, useNavigation, useFocusEffect } from '@react-navigation/native'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, zonaService, familiarService, grupoService } from '@/services/api'
 import { useSSEUbicacion } from '@/hooks/useSSEUbicacion'
 import { useAuth } from '@/context/AuthContext'
 import * as Location from 'expo-location'
-import { iniciarSeguimiento, enviarUbicacionCuidador, obtenerUbicacionesGrupo, type UbicacionCuidador } from '@/services/ubicacion'
+import {
+  iniciarSeguimiento,
+  enviarUbicacionCuidador, obtenerUbicacionesGrupo,
+  enviarUbicacionFamiliar, obtenerUbicacionesGrupoFamiliar,
+  type UbicacionCuidador, type UbicacionFamiliar,
+} from '@/services/ubicacion'
 
-function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = []): string {
+function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = [], familiares: UbicacionFamiliar[] = []): string {
   const zonesJs = zonas.map((zona) => {
     const lat   = zona.centro?.latitud  ?? 0
     const lng   = zona.centro?.longitud ?? 0
     const radio = zona.radio_metros     ?? 150
     const color = zona.activa ? '#2563eb' : '#888888'
+    const id    = zona.id ?? ''
     return `
-      L.circle([${lat}, ${lng}], {
-        radius: ${radio},
-        fillColor: '${color}',
-        fillOpacity: 0.12,
-        color: '${color}',
-        weight: 2
-      }).addTo(map);`
+      (function() {
+        var circle = L.circle([${lat}, ${lng}], {
+          radius: ${radio},
+          fillColor: '${color}',
+          fillOpacity: 0.15,
+          color: '${color}',
+          weight: 2
+        }).addTo(map);
+        ${id ? `zoneCircles['${id}'] = circle;` : ''}
+      })();`
   }).join('\n')
 
   const markersJs = pacientes.map((pac) => {
@@ -51,6 +60,16 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       })();`)
     .join('\n')
 
+  const familiarMarkersJs = familiares
+    .filter((f) => f.latitud && f.longitud)
+    .map((f) => `
+      (function() {
+        var m = L.marker([${f.latitud}, ${f.longitud}], { icon: familiarIcon }).addTo(map);
+        m.bindPopup('Familiar');
+        familiarMarkers['${f.familiar_id}'] = m;
+      })();`)
+    .join('\n')
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -67,13 +86,15 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false }).setView([11.2404, -74.2110], 14);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
       maxZoom: 19, attribution: ''
     }).addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     var markers = {};
     var cuidadorMarkers = {};
+    var familiarMarkers = {};
+    var zoneCircles = {};
 
     var personIcon = L.divIcon({
       html: '<div style="background:#2563eb;width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"14\\" height=\\"14\\" viewBox=\\"0 0 24 24\\" fill=\\"white\\"><path d=\\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\\"/></svg></div>',
@@ -89,9 +110,17 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       iconAnchor: [14, 14],
     });
 
+    var familiarIcon = L.divIcon({
+      html: '<div style="background:#9333ea;width:28px;height:28px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"12\\" height=\\"12\\" viewBox=\\"0 0 24 24\\" fill=\\"white\\"><path d=\\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\\"/></svg></div>',
+      className: '',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    });
+
     ${zonesJs}
     ${markersJs}
     ${cuidadorMarkersJs}
+    ${familiarMarkersJs}
 
     function updateMarker(id, lat, lng) {
       if (markers[id]) {
@@ -112,8 +141,30 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       }
     }
 
+    function updateFamiliar(id, lat, lng) {
+      if (familiarMarkers[id]) {
+        familiarMarkers[id].setLatLng([lat, lng]);
+      } else {
+        var m = L.marker([lat, lng], { icon: familiarIcon }).addTo(map);
+        m.bindPopup('Familiar');
+        familiarMarkers[id] = m;
+      }
+    }
+
     function flyTo(lat, lng) {
       map.flyTo([lat, lng], 16, { duration: 0.8 });
+    }
+
+    function addOrUpdateZone(id, lat, lng, radio, activa) {
+      var color = activa ? '#2563eb' : '#888888';
+      var opts = { radius: radio, fillColor: color, fillOpacity: 0.15, color: color, weight: 2 };
+      if (zoneCircles[id]) {
+        zoneCircles[id].setLatLng([lat, lng]);
+        zoneCircles[id].setRadius(radio);
+        zoneCircles[id].setStyle({ fillColor: color, color: color });
+      } else {
+        zoneCircles[id] = L.circle([lat, lng], opts).addTo(map);
+      }
     }
   </script>
 </body>
@@ -122,16 +173,20 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
 export default function MapScreen() {
   const navigation  = useNavigation()
-  const { tipoUsuario } = useAuth()
+  const { tipoUsuario, cuidador } = useAuth()
   const webViewRef  = useRef<WebView>(null)
   const [pacientes,  setPacientes]  = useState<any[]>([])
   const [online,     setOnline]     = useState(true)
   const [loading,    setLoading]    = useState(true)
   const [mapHtml,    setMapHtml]    = useState('')
   const [selPacId,   setSelPacId]   = useState<string | null>(null)
-  const gruposRef = useRef<any[]>([])
+  const gruposRef         = useRef<any[]>([])
+  const gruposFamiliarRef = useRef<any[]>([])
+  const zonasRef          = useRef<any[]>([])
+  const mapaListo         = useRef(false)
 
-  const { ubicacion, conectado } = useSSEUbicacion(selPacId)
+  // Los familiares no pueden acceder al stream SSE (requiere token de cuidador)
+  const { ubicacion, conectado } = useSSEUbicacion(tipoUsuario === 'familiar' ? null : selPacId)
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -146,16 +201,26 @@ export default function MapScreen() {
       }
 
       const todasZonas: any[] = []
-      for (const p of pacs) {
+      if (tipoUsuario === 'familiar') {
         try {
-          const rz = await zonaService.listarPorPaciente(p.id_paciente ?? p.id)
+          const rz = await zonaService.listarFamiliar()
           todasZonas.push(...(Array.isArray(rz.data) ? rz.data : []))
         } catch {}
+      } else {
+        for (const p of pacs) {
+          try {
+            const rz = await zonaService.listarPorPaciente(p.id_paciente ?? p.id)
+            todasZonas.push(...(Array.isArray(rz.data) ? rz.data : []))
+          } catch {}
+        }
       }
 
-      // Cargar grupos y ubicaciones de cuidadores (solo para cuidadores)
+      // Cargar ubicaciones de miembros del grupo
       const todasUbicaciones: UbicacionCuidador[] = []
+      const todasFamiliares:  UbicacionFamiliar[]  = []
+
       if (tipoUsuario !== 'familiar') {
+        // Cuidador: obtener ubicaciones de otros cuidadores
         try {
           const resGrupos = await grupoService.listar()
           const gruposList: any[] = Array.isArray(resGrupos.data) ? resGrupos.data : []
@@ -165,10 +230,63 @@ export default function MapScreen() {
             todasUbicaciones.push(...ubs.cuidadores)
           }
         } catch {}
+      } else {
+        // Familiar: obtener ubicaciones de cuidadores y otros familiares del grupo
+        try {
+          const resGrupos = await familiarService.misGrupos()
+          const gruposList: any[] = Array.isArray(resGrupos.data) ? resGrupos.data : []
+          gruposFamiliarRef.current = gruposList
+          for (const g of gruposList) {
+            const gId = g.id ?? g.grupo_id ?? g._id
+            if (!gId) continue
+            const ubs = await obtenerUbicacionesGrupoFamiliar(gId)
+            todasUbicaciones.push(...ubs.cuidadores)
+            todasFamiliares.push(...ubs.familiares)
+          }
+        } catch {}
       }
 
+      zonasRef.current = todasZonas
       setOnline(true)
-      setMapHtml(buildMapHTML(pacs, todasZonas, todasUbicaciones))
+
+      if (!mapaListo.current) {
+        // Primera carga: construir el HTML completo con Leaflet
+        setMapHtml(buildMapHTML(pacs, todasZonas, todasUbicaciones, todasFamiliares))
+        mapaListo.current = true
+      } else {
+        // Recargas siguientes: actualizar marcadores y zonas via inject
+        for (const z of todasZonas) {
+          const lat = z.centro?.latitud
+          const lng = z.centro?.longitud
+          if (!z.id || lat == null || lng == null) continue
+          const radio  = z.radio_metros ?? 150
+          const activa = !!z.activa
+          const js = `addOrUpdateZone('${z.id}', ${lat}, ${lng}, ${radio}, ${activa}); true;`
+          webViewRef.current?.injectJavaScript(js)
+        }
+        for (const c of todasUbicaciones) {
+          const js = `updateCuidador('${c.cuidador_id}', ${c.latitud}, ${c.longitud}); true;`
+          webViewRef.current?.injectJavaScript(js)
+        }
+        for (const f of todasFamiliares) {
+          const js = `updateFamiliar('${f.familiar_id}', ${f.latitud}, ${f.longitud}); true;`
+          webViewRef.current?.injectJavaScript(js)
+        }
+        if (tipoUsuario === 'familiar') {
+          // Actualizar marcadores de pacientes (sin SSE, basado en ultima_ubicacion)
+          for (const p of pacs) {
+            const ub = p.ultima_ubicacion
+            if (!ub) continue
+            const id  = p.id_paciente ?? p.id
+            const lat = ub.latitud ?? ub.lat
+            const lng = ub.longitud ?? ub.lng
+            if (lat != null && lng != null) {
+              const js = `updateMarker('${id}', ${lat}, ${lng}); true;`
+              webViewRef.current?.injectJavaScript(js)
+            }
+          }
+        }
+      }
     } catch {
       setOnline(false)
     } finally {
@@ -188,7 +306,7 @@ export default function MapScreen() {
     webViewRef.current?.injectJavaScript(js)
   }, [ubicacion, selPacId])
 
-  // Rastrear y publicar la posición propia (solo cuidadores)
+  // Rastrear y publicar la posición propia (cuidadores)
   useEffect(() => {
     if (tipoUsuario === 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
@@ -198,15 +316,43 @@ export default function MapScreen() {
       for (const g of gs) {
         enviarUbicacionCuidador(g.id, latitude, longitude)
       }
-      // Reflejar en el mapa en tiempo real
-      const js = `updateCuidador('yo', ${latitude}, ${longitude}); true;`
+      const miId = cuidador?.id ?? 'yo'
+      const js = `updateCuidador('${miId}', ${latitude}, ${longitude}); true;`
       webViewRef.current?.injectJavaScript(js)
     })
       .then((sub) => { suscripcion = sub })
       .catch(() => {})
 
     return () => { suscripcion?.remove() }
-  }, [tipoUsuario])
+  }, [tipoUsuario, cuidador])
+
+  // Rastrear y publicar la posición propia (familiares)
+  useEffect(() => {
+    if (tipoUsuario !== 'familiar') return
+    let suscripcion: Location.LocationSubscription | null = null
+
+    iniciarSeguimiento(({ latitude, longitude }) => {
+      const gs = gruposFamiliarRef.current
+      for (const g of gs) {
+        const gId = g.id ?? g.grupo_id ?? g._id
+        if (gId) enviarUbicacionFamiliar(gId, latitude, longitude)
+      }
+      const miId = cuidador?.id ?? 'yo_familiar'
+      const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}); true;`
+      webViewRef.current?.injectJavaScript(js)
+    })
+      .then((sub) => { suscripcion = sub })
+      .catch(() => {})
+
+    return () => { suscripcion?.remove() }
+  }, [tipoUsuario, cuidador])
+
+  // Cuando el usuario vuelve a esta pantalla, refresca zonas y ubicaciones
+  useFocusEffect(
+    useCallback(() => {
+      if (mapaListo.current) cargarDatos()
+    }, [cargarDatos])
+  )
 
   const irAPaciente = (pac: any) => {
     const id = pac.id_paciente ?? pac.id

@@ -2,14 +2,19 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path
 from models.model_zonasegura import CrearZonaSegura, ActualizarZonaSegura
-from services.service_zonasegura import crear_zona_segura, obtener_zonas_por_paciente, obtener_zona_por_id, actualizar_zona_segura, eliminar_zona_segura, verificar_paciente_en_zonas
-from security.dependencies import get_cuidador_actual
+from services.service_zonasegura import crear_zona_segura, obtener_zonas_por_paciente, obtener_zona_por_id, actualizar_zona_segura, eliminar_zona_segura, verificar_paciente_en_zonas, obtener_zonas_familiar
+from security.dependencies import get_cuidador_actual, get_familiar_actual
 
 MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 router = APIRouter(prefix="/zonas-seguras", tags=["Zonas Seguras"])
 
 
 # --- Endpoints protegidos (requieren JWT) ---
+
+@router.get("/familiar/")
+async def zonas_familiar(familiar_actual = Depends(get_familiar_actual)):
+    return await obtener_zonas_familiar(str(familiar_actual["_id"]))
+
 
 @router.post("/crear")
 async def crear_zona(

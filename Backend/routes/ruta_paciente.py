@@ -64,7 +64,8 @@ async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)
 
     async def generar():
         cola: asyncio.Queue = asyncio.Queue()
-        bus_eventos.suscribir(id, cola)
+        topic = f"ubicacion/{id}"
+        bus_eventos.suscribir(topic, cola)
         try:
             # Enviar la última ubicación conocida de inmediato
             paciente = await db.Pacientes.find_one({"_id": ObjectId(id)})
@@ -88,7 +89,7 @@ async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)
         except asyncio.CancelledError:
             pass
         finally:
-            bus_eventos.desuscribir(id, cola)
+            bus_eventos.desuscribir(topic, cola)
 
     return StreamingResponse(
         generar(),

@@ -41,7 +41,7 @@ export default function DrawerContent({ navigation }: Props) {
   const handleLogout = async () => {
     navigation.closeDrawer()
     await logout()
-    router.replace('/login' as any)
+    // AuthGuard en _layout.tsx detecta token === null y redirige a /login automáticamente
   }
 
   const handleNav = (route: string) => {

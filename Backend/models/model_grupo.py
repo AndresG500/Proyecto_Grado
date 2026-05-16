@@ -33,3 +33,9 @@ class UbicacionCuidador(BaseModel):
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class UbicacionFamiliar(BaseModel):
+    familiar_id: Optional[str] = Field(None)
+    latitud: float = Field(..., ge=-90.0, le=90.0)
+    longitud: float = Field(..., ge=-180.0, le=180.0)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)

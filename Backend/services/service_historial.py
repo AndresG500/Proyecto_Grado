@@ -57,8 +57,9 @@ async def registrar_ubicacion(datos: HistorialUbicacionBase):
             {
                 "$set": {
                     "ultima_ubicacion": {
-                        "latitud":  datos.coordenadas.latitud,
-                        "longitud": datos.coordenadas.longitud
+                        "latitud":   datos.coordenadas.latitud,
+                        "longitud":  datos.coordenadas.longitud,
+                        "timestamp": datos.timestamp,
                     }
                 }
             }
@@ -127,6 +128,50 @@ async def obtener_historial_ubicaciones(paciente_id: str, cuidador_email: str) -
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al obtener historial: {ex}")
+        return {"error": f"No se pudo obtener el historial: {ex}"}
+
+
+async def verificar_familiar_puede_ver_paciente(paciente_id: str, familiar_id: str) -> bool:
+    try:
+        db = get_database()
+        grupo = await db["Grupos"].find_one({
+            "familiar_ids": familiar_id,
+            "paciente_ids": paciente_id,
+        })
+        return grupo is not None
+    except Exception:
+        return False
+
+
+async def obtener_historial_ubicaciones_familiar(paciente_id: str, familiar_id: str):
+    if not await verificar_familiar_puede_ver_paciente(paciente_id, familiar_id):
+        return {"error": "No tienes permiso para ver este paciente"}
+
+    try:
+        db = get_database()
+        coleccion = db["Historial"]
+        corte = datetime.utcnow() - timedelta(days=DIAS_HISTORIAL)
+
+        cursor = coleccion.find(
+            {"paciente_id": paciente_id, "timestamp": {"$gte": corte}},
+            sort=[("timestamp", 1)]
+        )
+
+        historial = []
+        async for doc in cursor:
+            doc["id"] = str(doc["_id"])
+            del doc["_id"]
+            historial.append(doc)
+
+        if not historial:
+            Logger.add_to_log("warn", f"Sin historial para paciente (familiar): {paciente_id}")
+            return {"mensaje": "No se encontró historial para este paciente"}
+
+        Logger.add_to_log("info", f"Historial obtenido para paciente (familiar): {paciente_id}")
+        return historial
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener historial (familiar): {ex}")
         return {"error": f"No se pudo obtener el historial: {ex}"}
 
 

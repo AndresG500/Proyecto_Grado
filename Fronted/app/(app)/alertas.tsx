@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { alertaService } from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 
 const ESTADO_COLOR: Record<string, string> = {
   enviada:  Colors.error,
@@ -15,15 +16,20 @@ const ESTADO_COLOR: Record<string, string> = {
 
 export default function AlertasScreen() {
   const router = useRouter()
+  const { tipoUsuario } = useAuth()
+  const esFamiliar = tipoUsuario === 'familiar'
+
   const [alertas,  setAlertas]  = useState<any[]>([])
   const [loading,  setLoading]  = useState(true)
   const [resolviendo, setResolviendo] = useState<string | null>(null)
 
   const cargar = async () => {
     try {
-      const res = await alertaService.listar()
+      const res = esFamiliar ? await alertaService.listarFamiliar() : await alertaService.listar()
       const lista = Array.isArray(res.data) ? res.data : []
       setAlertas(lista.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()))
+    } catch {
+      setAlertas([])
     } finally {
       setLoading(false)
     }
@@ -89,7 +95,7 @@ export default function AlertasScreen() {
                 )}
               </View>
 
-              {item.estado === 'enviada' && (
+              {item.estado === 'enviada' && !esFamiliar && (
                 <TouchableOpacity
                   style={[styles.resolverBtn, resolviendo === item.id && styles.resolverBtnLoading]}
                   onPress={() => handleResolver(item.id)}

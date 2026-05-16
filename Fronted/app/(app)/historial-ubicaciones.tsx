@@ -5,7 +5,8 @@ import MapView, { Polyline, Region, UrlTile } from 'react-native-maps'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
-import { pacienteService } from '@/services/api'
+import { pacienteService, familiarService } from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 
 const SANTA_MARTA: Region = {
   latitude:      11.2404,
@@ -23,6 +24,7 @@ interface Ubicacion {
 
 export default function HistorialUbicacionesScreen() {
   const router = useRouter()
+  const { tipoUsuario } = useAuth()
   const mapRef = useRef<MapView>(null)
   const [loading,           setLoading]           = useState(true)
   const [pacientes,         setPacientes]         = useState<any[]>([])
@@ -31,17 +33,21 @@ export default function HistorialUbicacionesScreen() {
 
   const cargarRuta = useCallback(async (pacienteId: string) => {
     try {
-      const res  = await pacienteService.ruta(pacienteId)
+      const res  = tipoUsuario === 'familiar'
+        ? await pacienteService.rutaFamiliar(pacienteId)
+        : await pacienteService.ruta(pacienteId)
       const hist = Array.isArray(res.data) ? res.data : []
       setUbicaciones(hist)
     } catch {
       setUbicaciones([])
     }
-  }, [])
+  }, [tipoUsuario])
 
   const cargarDatos = useCallback(async () => {
     try {
-      const resPac = await pacienteService.listar()
+      const resPac = tipoUsuario === 'familiar'
+        ? await familiarService.misPacientes()
+        : await pacienteService.listar()
       const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
       setPacientes(pacs)
 
@@ -55,7 +61,7 @@ export default function HistorialUbicacionesScreen() {
     } finally {
       setLoading(false)
     }
-  }, [cargarRuta])
+  }, [cargarRuta, tipoUsuario])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
@@ -123,7 +129,7 @@ export default function HistorialUbicacionesScreen() {
           mapType="none"
         >
           <UrlTile
-            urlTemplate="https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+            urlTemplate={`https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}`}
             maximumZ={19}
           />
           {routeCoordinates.length > 1 && (
@@ -135,11 +141,39 @@ export default function HistorialUbicacionesScreen() {
           )}
         </MapView>
 
-        {ubicaciones.length > 0 && (
-          <View style={styles.countOverlay}>
-            <Text style={styles.countText}>{ubicaciones.length} puntos registrados</Text>
-          </View>
-        )}
+        {ubicaciones.length > 0 && (() => {
+          const pac     = pacientes.find(p => (p.id_paciente ?? p.id) === selectedPaciente)
+          const ultimo  = ubicaciones[ubicaciones.length - 1]
+          const lat     = ultimo?.coordenadas?.latitud
+          const lng     = ultimo?.coordenadas?.longitud
+          const ts      = ultimo?.timestamp ? new Date(ultimo.timestamp) : null
+          const tsStr   = ts
+            ? ts.toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            : null
+          return (
+            <View style={styles.infoOverlay}>
+              <View style={styles.infoRow}>
+                <Ionicons name="person-circle" size={18} color={Colors.primary} />
+                <Text style={styles.infoNombre} numberOfLines={1}>
+                  {pac?.nombre_paciente ?? '—'}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="location" size={14} color={Colors.textSecondary} />
+                <Text style={styles.infoCoordenadas}>
+                  {lat?.toFixed(5) ?? '—'}, {lng?.toFixed(5) ?? '—'}
+                </Text>
+              </View>
+              {tsStr && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="time-outline" size={13} color={Colors.textSecondary} />
+                  <Text style={styles.infoTs}>{tsStr}</Text>
+                </View>
+              )}
+              <Text style={styles.infoPuntos}>{ubicaciones.length} puntos · últimos 7 días</Text>
+            </View>
+          )
+        })()}
       </View>
 
       {ubicaciones.length === 0 && (
@@ -174,13 +208,17 @@ const styles = StyleSheet.create({
   pacChipTextSelected: { color: Colors.white },
   mapContainer: { flex: 1 },
   map:          { flex: 1 },
-  countOverlay: {
-    position: 'absolute', bottom: 20, alignSelf: 'center',
+  infoOverlay: {
+    position: 'absolute', bottom: 20, left: 16, right: 16,
     backgroundColor: Colors.white,
-    paddingHorizontal: 20, paddingVertical: 10,
-    borderRadius: 20, elevation: 4,
+    borderRadius: 18, paddingHorizontal: 18, paddingVertical: 14,
+    elevation: 6, gap: 5,
   },
-  countText: { fontSize: 14, color: Colors.text, fontWeight: '600' },
+  infoRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  infoNombre:     { fontSize: 15, fontWeight: '700', color: Colors.text, flex: 1 },
+  infoCoordenadas:{ fontSize: 12, color: Colors.textSecondary, fontFamily: 'monospace' },
+  infoTs:         { fontSize: 12, color: Colors.textSecondary },
+  infoPuntos:     { fontSize: 11, color: Colors.primaryLight, marginTop: 2 },
   emptyContainer: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     padding: 32, backgroundColor: Colors.background,

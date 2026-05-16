@@ -4,11 +4,12 @@ import {
   ScrollView, ActivityIndicator, Alert, Dimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import MapView, { Circle, Marker, MapPressEvent, Region } from 'react-native-maps'
+import MapView, { Circle, Marker, MapPressEvent, Region, UrlTile } from 'react-native-maps'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
-import { zonaService, pacienteService } from '@/services/api'
+import { zonaService, pacienteService, familiarService } from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 
 const { height: SCREEN_H } = Dimensions.get('window')
 
@@ -22,6 +23,8 @@ type Coord = { latitud: number; longitud: number }
 export default function ZonasSeguras() {
   const router  = useRouter()
   const mapRef  = useRef<MapView>(null)
+  const { tipoUsuario } = useAuth()
+  const esFamiliar = tipoUsuario === 'familiar'
 
   const [zonas,     setZonas]     = useState<any[]>([])
   const [pacientes, setPacientes] = useState<any[]>([])
@@ -34,22 +37,37 @@ export default function ZonasSeguras() {
   const [pacSelId,  setPacSelId]  = useState('')
   const [centro,    setCentro]    = useState<Coord | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [toggling,  setToggling]  = useState<string | null>(null)
 
   const cargar = async () => {
     try {
-      const resPac = await pacienteService.listar()
-      const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
-      setPacientes(pacs)
-      if (pacs.length > 0) setPacSelId(pacs[0].id_paciente ?? pacs[0].id)
+      if (esFamiliar) {
+        const [resPac, resZonas] = await Promise.all([
+          familiarService.misPacientes(),
+          zonaService.listarFamiliar(),
+        ])
+        const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
+        setPacientes(pacs)
+        const validas = (Array.isArray(resZonas.data) ? resZonas.data : []).filter((z: any) => !!z.id)
+        setZonas(validas)
+      } else {
+        const resPac = await pacienteService.listar()
+        const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
+        setPacientes(pacs)
+        if (pacs.length > 0) setPacSelId(pacs[0].id_paciente ?? pacs[0].id)
 
-      const todas: any[] = []
-      for (const p of pacs) {
-        try {
-          const rz = await zonaService.listarPorPaciente(p.id_paciente ?? p.id)
-          todas.push(...(Array.isArray(rz.data) ? rz.data : []))
-        } catch {}
+        const resultados = await Promise.all(
+          pacs.map((p) =>
+            zonaService.listarPorPaciente(p.id_paciente ?? p.id).catch(() => ({ data: [] }))
+          )
+        )
+        const todas = resultados.flatMap((rz) =>
+          (Array.isArray(rz.data) ? rz.data : []).filter((z: any) => !!z.id)
+        )
+        setZonas(todas)
       }
-      setZonas(todas)
+    } catch {
+      setZonas([])
     } finally { setLoading(false) }
   }
 
@@ -69,9 +87,9 @@ export default function ZonasSeguras() {
     }
     setGuardando(true)
     try {
-      const res = await zonaService.crear({ nombre: nombre.trim(), paciente_id: pacSelId, centro, radio_metros: radioNum })
-      setZonas((z) => [...z, res.data])
+      await zonaService.crear({ nombre: nombre.trim(), paciente_id: pacSelId, centro, radio_metros: radioNum })
       setCreando(false); setNombre(''); setRadio('150'); setCentro(null)
+      await cargar()
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'No se pudo crear la zona.')
     } finally { setGuardando(false) }
@@ -81,15 +99,27 @@ export default function ZonasSeguras() {
     Alert.alert('Eliminar zona', '¿Seguro que quieres eliminar esta zona segura?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Eliminar', style: 'destructive', onPress: async () => {
-          await zonaService.eliminar(id)
-          setZonas((z) => z.filter((x) => x.id !== id))
+          try {
+            await zonaService.eliminar(id)
+            setZonas((z) => z.filter((x) => x.id !== id))
+          } catch (err: any) {
+            Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo eliminar la zona.')
+          }
         }},
     ])
   }
 
   const handleToggle = async (id: string, activa: boolean) => {
-    await zonaService.toggle(id, !activa)
-    setZonas((z) => z.map((x) => x.id === id ? { ...x, activa: !x.activa } : x))
+    if (toggling) return
+    setToggling(id)
+    try {
+      await zonaService.toggle(id, !activa)
+      setZonas((z) => z.map((x) => x.id === id ? { ...x, activa: !x.activa } : x))
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo actualizar la zona.')
+    } finally {
+      setToggling(null)
+    }
   }
 
   // ── Vista de creación con mapa ─────────────────────────────────────────
@@ -106,7 +136,12 @@ export default function ZonasSeguras() {
           showsUserLocation
           rotateEnabled={false}
           toolbarEnabled={false}
+          mapType="none"
         >
+          <UrlTile
+            urlTemplate={`https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}`}
+            maximumZ={19}
+          />
           {centro && (
             <>
               <Marker coordinate={{ latitude: centro.latitud, longitude: centro.longitud }}>
@@ -210,19 +245,23 @@ export default function ZonasSeguras() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Zonas seguras</Text>
-        <TouchableOpacity onPress={() => setCreando(true)} style={styles.addBtn} activeOpacity={0.8}>
-          <Ionicons name="add" size={26} color={Colors.white} />
-        </TouchableOpacity>
+        {!esFamiliar && (
+          <TouchableOpacity onPress={() => setCreando(true)} style={styles.addBtn} activeOpacity={0.8}>
+            <Ionicons name="add" size={26} color={Colors.white} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primaryLight} /></View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView style={{ flex: 1, backgroundColor: Colors.background }} contentContainerStyle={styles.list}>
           {zonas.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="shield-outline" size={56} color={Colors.primaryLight} />
-              <Text style={styles.emptyText}>No hay zonas seguras{'\n'}Toca + para crear una</Text>
+              <Text style={styles.emptyText}>
+                {esFamiliar ? 'No hay zonas seguras registradas' : 'No hay zonas seguras\nToca + para crear una'}
+              </Text>
             </View>
           ) : zonas.map((item) => {
             const pac = pacientes.find((p) => (p.id_paciente ?? p.id) === item.paciente_id)
@@ -238,15 +277,24 @@ export default function ZonasSeguras() {
                     <Text style={styles.zonaMeta}>{pac?.nombre_paciente ?? '—'} · {item.radio_metros}m</Text>
                   </View>
                 </View>
-                <View style={styles.cardActions}>
-                  <TouchableOpacity onPress={() => handleToggle(item.id, item.activa)} activeOpacity={0.7} style={styles.actionBtn}>
-                    <Ionicons name={item.activa ? 'toggle' : 'toggle-outline'} size={28}
-                      color={item.activa ? Colors.primary : Colors.textSecondary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleEliminar(item.id)} activeOpacity={0.7} style={styles.actionBtn}>
-                    <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                  </TouchableOpacity>
-                </View>
+                {!esFamiliar && (
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity
+                      onPress={() => handleToggle(item.id, item.activa)}
+                      activeOpacity={0.7}
+                      style={[styles.actionBtn, toggling === item.id && { opacity: 0.4 }]}
+                      disabled={toggling !== null}
+                    >
+                      {toggling === item.id
+                        ? <ActivityIndicator size="small" color={Colors.primary} />
+                        : <Ionicons name={item.activa ? 'toggle' : 'toggle-outline'} size={28}
+                            color={item.activa ? Colors.primary : Colors.textSecondary} />}
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleEliminar(item.id)} activeOpacity={0.7} style={styles.actionBtn}>
+                      <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )
           })}
@@ -264,7 +312,7 @@ const styles = StyleSheet.create({
   addBtn:      { padding: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
   emptyText: { fontSize: 15, color: Colors.primaryLight, textAlign: 'center', lineHeight: 22 },
-  list:   { padding: 16, gap: 12 },
+  list:   { padding: 16, gap: 12, flexGrow: 1 },
   card:   { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, borderRadius: 18, padding: 16, gap: 12, elevation: 3 },
   cardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   cardActions: { flexDirection: 'row', gap: 4 },

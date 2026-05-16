@@ -49,6 +49,13 @@ export interface UbicacionCuidador {
   timestamp?: string
 }
 
+export interface UbicacionFamiliar {
+  familiar_id: string
+  latitud: number
+  longitud: number
+  timestamp?: string
+}
+
 export const obtenerUbicacionesGrupo = async (
   grupoId: string
 ): Promise<{ cuidadores: UbicacionCuidador[]; pacientes: any[] }> => {
@@ -61,5 +68,31 @@ export const obtenerUbicacionesGrupo = async (
       console.warn('[ubicacion] obtenerUbicacionesGrupo error:', status, err?.response?.data)
     }
     return { cuidadores: [], pacientes: [] }
+  }
+}
+
+export const enviarUbicacionFamiliar = async (
+  grupoId: string,
+  latitude: number,
+  longitude: number
+): Promise<void> => {
+  try {
+    await api.post(`/grupos/${grupoId}/ubicacion/familiar`, {
+      latitud:  latitude,
+      longitud: longitude,
+    })
+  } catch {
+    // silencioso — no interrumpir el tracker por errores de red
+  }
+}
+
+export const obtenerUbicacionesGrupoFamiliar = async (
+  grupoId: string
+): Promise<{ cuidadores: UbicacionCuidador[]; familiares: UbicacionFamiliar[]; pacientes: any[] }> => {
+  try {
+    const res = await api.get(`/grupos/${grupoId}/ubicaciones/familiar`)
+    return res.data ?? { cuidadores: [], familiares: [], pacientes: [] }
+  } catch {
+    return { cuidadores: [], familiares: [], pacientes: [] }
   }
 }

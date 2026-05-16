@@ -22,6 +22,8 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
             "enfermedad":         datos.enfermedad,
             "id_cuidador":        str(cuidador["_id"]),  # ← toma el _id real del cuidador
             "id_dispositivo":     datos.id_dispositivo,
+            "fuera_de_zona":       False,
+            "ultima_alerta_timestamp": None,
             "ultima_ubicacion":   None,
             "ultima_señal":       None,
             "estado_dispositivo": None,

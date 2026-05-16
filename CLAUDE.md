@@ -30,6 +30,18 @@ uvicorn app:app --reload
 
 API docs available at `http://localhost:8000/docs`.
 
+### Docker (local MongoDB alternative)
+
+`Backend/docker-compose.yml` starts a local MongoDB + Mongo Express instead of using Atlas:
+
+```bash
+cd Backend
+docker compose up -d
+# MongoDB on port 27017, Mongo Express UI on http://localhost:8081
+```
+
+Set `MONGO_URI=mongodb://localhost:27017` in `.env` when using this.
+
 ### Required `.env` (Backend/)
 
 ```
@@ -41,6 +53,29 @@ MQTT_HOST=...hivemq.cloud
 MQTT_PORT=8883
 MQTT_USER=...
 MQTT_PASS=...
+```
+
+### Seeding demo data
+
+```bash
+cd Backend
+node insertar_datos_demo.js   # requires mongosh; targets localhost:27017 by default
+```
+
+### Docker backup / restore
+
+```bash
+bash docker/exportar.sh    # dumps MongoDB to docker/dump/
+bash docker/restaurar.sh   # restores from docker/dump/
+```
+
+### Quick import check
+
+```bash
+cd Backend && source env/bin/activate
+python -c "from services.service_alerta import reenviar_alertas_activas; print('OK')"
+python -c "from routes.ruta_alerta import router; print('OK')"
+python -c "from MQTT.subscriber import mqtt_subscriber_task; print('OK')"
 ```
 
 ### Architecture
@@ -55,13 +90,19 @@ Each domain follows a three-layer pattern:
 | Business logic | `services/service_*.py` | Returns `{"error": "msg"}` on failure |
 | HTTP router | `routes/ruta_*.py` | Checks for `"error"` key, raises HTTPException |
 
-**MongoDB collections:** `Cuidadores`, `Familiares`, `Pacientes`, `Dispositivos`, `DispositivosDisponibles`, `ZonasSeguras`, `Grupos`, `Alertas`, `HistorialUbicaciones`, `TokensRevocados`
+**Naming mismatch:** `routes/ruta_cliente.py` handles the `/cuidadores` prefix — the filename uses "cliente" but the domain, collection, and prefix are all "cuidador". Do not create a separate `ruta_cuidador.py`.
 
-**MQTT flow:** ESP32 publishes JSON `{"lat": float, "lng": float}` to `ubilife/dispositivo/<id>/gps` → `MQTT/subscriber.py` parses the payload → if device not in `Dispositivos`, upserts to `DispositivosDisponibles` and returns → otherwise saves to `HistorialUbicaciones` → evaluates geofences via `service_alerta.evaluar_zonas_seguras` → if outside zone, fires Expo Push notification and records in `Alertas` → publishes SSE event to `bus_eventos` (in `utils/eventos.py`).
+**MongoDB collections:** `Cuidadores`, `Familiares`, `Pacientes`, `Dispositivos`, `DispositivosDisponibles`, `ZonasSeguras`, `Grupos`, `Alertas`, `Historial`, `TokensRevocados`
 
-**Auth:** JWT issued on `/cuidadores/verificar` and `/familiares/verificar`. Revoked tokens are stored in `TokensRevocados` with a MongoDB TTL index (set at startup) so they auto-expire. Two auth dependencies in `security/dependencies.py`:
+**MQTT flow:** ESP32 publishes JSON `{"lat": float, "lng": float}` to `ubilife/dispositivo/<id>/gps` → `MQTT/subscriber.py` parses the payload → if device not in `Dispositivos`, upserts to `DispositivosDisponibles` (field: `dispositivo_detectado` timestamp) and returns → otherwise saves to `Historial` → evaluates geofences via `service_alerta.evaluar_zonas_seguras` → if outside zone, fires Expo Push notification and records in `Alertas` → publishes SSE event to `bus_eventos` (in `utils/eventos.py`).
+
+**Auth:** JWT issued on `/cuidadores/verificar` and `/familiares/verificar`. Revoked tokens are stored in `TokensRevocados` with a MongoDB TTL index (set at startup) so they auto-expire. JWT payload fields: `email` and `jti`. Two auth dependencies in `security/dependencies.py`:
 - `get_cuidador_actual` — for cuidador-only routes
 - `get_familiar_actual` — for familiar-only routes
+
+**FastAPI route ordering:** Always register static path segments before parameterized ones within the same router. Example: `GET /familiar/` must be registered **before** `GET /{alerta_id}` or FastAPI will match `"familiar"` as the `alerta_id` parameter. This applies to any router where a literal segment and a path param share the same position.
+
+**Input sanitization:** `utils/sanitizer.py` — `sanitize_string(value, max_length)` and `sanitize_dict(data, max_length)` (HTML-escapes strings). Use at route boundaries for user-supplied text.
 
 **Push notifications:** Uses Expo Push API (not Firebase directly). `FCM/client.py` sends HTTP requests to `https://exp.host/--/api/v2/push/send`. Tokens stored as `fcm_token` on each `Cuidador` document; invalid tokens auto-cleaned after a `DeviceNotRegistered` error.
 
@@ -81,16 +122,20 @@ Wrong field names have caused multiple bugs — use these exactly:
 
 **Grupos:** `cuidador_ids: [str]` (not `cuidador_id`), `paciente_ids: [str]` (not `paciente_id`), `familiar_ids: [str]`, `codigo: str` (for joining)
 
-**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`.
+**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`. Alert cooldown: 300 s between repeated push notifications for the same patient (`COOLDOWN_ALERTA_SEGUNDOS`).
 
 **Dispositivos:** `id_dispositivo` (string identifier from ESP32), `paciente_id`, `ultima_conexion`
+
+**Historial:** Collection name is `Historial` (not `HistorialUbicaciones`). Locations are filtered: skips a new point if it is less than 10 m from the previous one (`DISTANCIA_MINIMA_METROS = 10`). History queries return the last 7 days (`DIAS_HISTORIAL = 7`).
+
+**DispositivosDisponibles:** `id_dispositivo`, `dispositivo_detectado` (timestamp of last MQTT ping, refreshed on each message).
 
 ### Utility modules
 
 There are **two** geo/utility directories — do not confuse them:
 - `utilidades/geo.py` — `distancia_metros(lat1, lng1, lat2, lng2)` — used by `service_alerta.py`
-- `utils/geo.py` — `calcular_distancia(lat1, lng1, lat2, lng2)` — standalone, currently unused by services
-- `utilidades/mongo_utils.py` — `to_str_id(id)`, `to_object_id(id)` helpers
+- `utils/geo.py` — `calcular_distancia(lat1, lng1, lat2, lng2)` — used by `service_historial.py` for the 10 m movement filter
+- `utilidades/mongo_utils.py` — `to_str_id(id)`, `to_object_id(id)`, `ensure_str(id)`, `find_by_id_str(col, id)`, `update_by_id_str(col, id, update)` helpers
 
 ---
 
@@ -122,18 +167,31 @@ Uses **Expo Router** (file-based routing):
 
 - `app/_layout.tsx` — Root layout; wraps everything in `AuthProvider` and `AuthGuard` (redirects unauthenticated users to `/login`). Also sets up push notification listeners via `configurarListeners`.
 - `app/(app)/_layout.tsx` — Drawer navigation for protected routes
-- `app/(app)/` — Protected routes (drawer navigation). Entry is `index.tsx` (map + live location)
+- `app/(app)/` — Protected drawer screens: `index` (map + live location), `alertas`, `zonas-seguras`, `historial-ubicaciones`, `grupo-familiar`, `registro-paciente`, `vincular-dispositivo`, `perfil`
 - Public routes: `login.tsx`, `register.tsx`, `register-cuidador.tsx`, `register-familiar.tsx`, `elegir-rol.tsx`
 
-**State:** `context/AuthContext.tsx` holds `token`, `cuidador`, and `tipoUsuario` (`'cuidador' | 'familiar'`), persisted in `AsyncStorage`. The axios instance in `services/api.ts` registers a `_logoutHandler` that auto-calls `logout()` on any 401 response.
+**State:** `context/AuthContext.tsx` holds `token`, `cuidador`, and `tipoUsuario` (`'cuidador' | 'familiar'`), persisted in `AsyncStorage`. On every cold start `init()` validates the stored token against the backend (`/cuidadores/perfil` or `/familiares/grupos`); if the request fails the token is cleared and the user is sent to login. The axios instance in `services/api.ts` registers a `_logoutHandler` that auto-calls `logout()` on any 401 response.
 
 **API calls:** `services/api.ts` — a single `axios` instance with a request interceptor that attaches the Bearer token. Domain-grouped exports: `cuidadorService`, `familiarService`, `pacienteService`, `zonaService`, `alertaService`, `dispositivoService`, `grupoService`.
 
+**Higher-level service helpers:** `services/pacientes.tsx` wraps `pacienteService` with typed `Paciente` interfaces and error-safe functions (`listarPacientes`, `obtenerPaciente`, `tienePacientes`, etc.). Use these in screens instead of calling `pacienteService` directly when you need typed results.
+
+**Cuidador location tracking:** `services/ubicacion.tsx` — `solicitarPermisos()`, `iniciarSeguimiento(onUbicacion)` (device GPS watch), `enviarUbicacionCuidador(grupoId, lat, lng)` (POST to `/grupos/{id}/ubicacion`), and `obtenerUbicacionesGrupo(grupoId)` (GET `/grupos/{id}/ubicaciones`). Returns `{ cuidadores, pacientes }`. Silently swallows network errors so it doesn't interrupt tracking.
+
 **Real-time location:** `hooks/useSSEUbicacion.ts` — connects to the SSE endpoint using `react-native-sse`, auto-reconnects on error after 5 s. SSE event data uses keys `lat`/`lng` (not `latitud`/`longitud`).
 
-**Push notifications:** `utils/notificaciones.ts` — `registrarToken()` called after login (fire-and-forget), `configurarListeners(onAlerta)` called in root layout. Both functions are no-ops in Expo Go (require a development build for actual push delivery).
+**Push notifications:** The real implementation lives in `services/notificaciones.ts`; `utils/notificaciones.ts` is a re-export shim — always import from `@/services/notificaciones` or `@/utils/notificaciones` (they resolve to the same code). `registrarToken()` is called after login (fire-and-forget), `configurarListeners(onAlerta)` is called in root layout. Both are no-ops in Expo Go (require a development build for actual push delivery). `Notifications.setNotificationHandler` must be guarded by `if (!IS_EXPO_GO)` (Expo Go SDK 53+ crashes otherwise).
 
-**Maps:** The main map (`index.tsx`) uses `react-native-webview` + Leaflet + OpenStreetMap (no API key required). Do not switch to `react-native-maps` with `PROVIDER_GOOGLE` for the main map.
+**Maps:** The main map (`index.tsx`) uses `react-native-webview` + Leaflet + OpenStreetMap (no API key required). Do not switch to `react-native-maps` with `PROVIDER_GOOGLE` for the main map. Marker updates use a `mapaListo` ref: the full Leaflet HTML is built once, and subsequent GPS updates are injected with `webViewRef.current?.injectJavaScript(js)` to avoid re-downloading Leaflet from CDN on every tick.
+
+**cuidador vs familiar branching:** Every protected screen checks `tipoUsuario` from `AuthContext` and calls the appropriate endpoint. The 401 interceptor in `api.ts` calls `logout()` on any 401, so a cuidador-only endpoint called by a familiar triggers automatic logout — always use the correct endpoint for each role. Pattern:
+
+| Screen | Cuidador endpoint | Familiar endpoint |
+|---|---|---|
+| `grupo-familiar` | `GET /grupos/` | `GET /familiares/grupos` |
+| `historial-ubicaciones` | `GET /historial-ubicaciones/ruta/{id}` | `GET /historial-ubicaciones/ruta-familiar/{id}` |
+| `alertas` | `GET /alertas/` | `GET /alertas/familiar/` |
+| `zonas-seguras` | `GET /zonas-seguras/paciente/{id}` | `GET /zonas-seguras/familiar/` |
 
 ---
 

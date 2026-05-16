@@ -2,7 +2,7 @@ from datetime import datetime
 import random
 import string
 from database.database import get_database
-from models.model_grupo import CrearGrupo, ActualizarGrupo, UbicacionCuidador
+from models.model_grupo import CrearGrupo, ActualizarGrupo, UbicacionCuidador, UbicacionFamiliar
 from bson import ObjectId
 from utils.Logger import Logger
 from utils.geo import calcular_distancia
@@ -414,3 +414,164 @@ async def actualizar_grupo(grupo_id: str, cuidador_id: str, datos: ActualizarGru
     except Exception as ex:
         Logger.add_to_log("error", f"Error al actualizar grupo: {ex}")
         return {"error": f"No se pudo actualizar el grupo: {ex}"}
+
+
+async def unirse_a_grupo(familiar_id: str, codigo: str) -> dict:
+    try:
+        db             = get_database()
+        col_grupos     = db["Grupos"]
+        col_familiares = db["Familiares"]
+
+        grupo = await col_grupos.find_one({"codigo": codigo.strip().upper()})
+        if not grupo:
+            Logger.add_to_log("warn", f"Código de grupo inválido: {codigo}")
+            return {"error": "Código de grupo inválido. Verifica el código con el cuidador."}
+
+        grupo_id = str(grupo["_id"])
+
+        if familiar_id in grupo.get("familiar_ids", []):
+            Logger.add_to_log("warn", f"Familiar {familiar_id} ya pertenece al grupo {grupo_id}")
+            return {"mensaje": "Ya perteneces a este grupo"}
+
+        await col_grupos.update_one(
+            {"_id": grupo["_id"]},
+            {"$addToSet": {"familiar_ids": familiar_id}}
+        )
+
+        await col_familiares.update_one(
+            {"_id": ObjectId(familiar_id)},
+            {"$addToSet": {"grupo_ids": grupo_id}}
+        )
+
+        Logger.add_to_log("info", f"Familiar {familiar_id} se unió al grupo {grupo_id}")
+        return {"mensaje": "Te has unido al grupo exitosamente", "grupo_id": grupo_id}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al unirse al grupo: {ex}")
+        return {"error": f"No se pudo unir al grupo: {ex}"}
+
+
+async def guardar_ubicacion_familiar(datos: UbicacionFamiliar):
+    try:
+        db = get_database()
+        col_ubicaciones = db["UbicacionesFamiliares"]
+
+        await col_ubicaciones.update_one(
+            {"familiar_id": datos.familiar_id},
+            {"$set": {
+                "familiar_id": datos.familiar_id,
+                "latitud":     datos.latitud,
+                "longitud":    datos.longitud,
+                "timestamp":   datetime.utcnow()
+            }},
+            upsert=True
+        )
+        Logger.add_to_log("info", f"Ubicación de familiar actualizada: {datos.familiar_id}")
+        return {"mensaje": "Ubicación actualizada exitosamente"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al guardar ubicación del familiar: {ex}")
+        return {"error": f"No se pudo guardar la ubicación: {ex}"}
+
+
+async def obtener_ubicaciones_grupo_familiar(grupo_id: str, familiar_solicitante_id: str):
+    try:
+        db                = get_database()
+        col_grupos        = db["Grupos"]
+        col_ub_cuidadores = db["UbicacionesCuidadores"]
+        col_ub_familiares = db["UbicacionesFamiliares"]
+        col_pacientes     = db["Pacientes"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            return {"mensaje": "No se encontró el grupo"}
+
+        if familiar_solicitante_id not in grupo.get("familiar_ids", []):
+            return {"error": "No tienes permiso para ver las ubicaciones de este grupo"}
+
+        ubicaciones_cuidadores = []
+        async for ub in col_ub_cuidadores.find({"cuidador_id": {"$in": grupo["cuidador_ids"]}}):
+            ub.pop("_id", None)
+            ubicaciones_cuidadores.append(ub)
+
+        ubicaciones_familiares = []
+        async for ub in col_ub_familiares.find({"familiar_id": {"$in": grupo.get("familiar_ids", [])}}):
+            ub.pop("_id", None)
+            ubicaciones_familiares.append(ub)
+
+        ubicaciones_pacientes = []
+        for paciente_id in grupo.get("paciente_ids", []):
+            try:
+                paciente = await col_pacientes.find_one({"_id": ObjectId(paciente_id)})
+                if paciente and paciente.get("ultima_ubicacion"):
+                    ubicaciones_pacientes.append({
+                        "paciente_id":      paciente_id,
+                        "nombre_paciente":  paciente["nombre_paciente"],
+                        "ultima_ubicacion": paciente["ultima_ubicacion"]
+                    })
+            except Exception:
+                pass
+
+        Logger.add_to_log("info", f"Ubicaciones obtenidas para grupo (familiar): {grupo_id}")
+        return {
+            "cuidadores": ubicaciones_cuidadores,
+            "familiares": ubicaciones_familiares,
+            "pacientes":  ubicaciones_pacientes
+        }
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener ubicaciones del grupo (familiar): {ex}")
+        return {"error": f"No se pudieron obtener las ubicaciones: {ex}"}
+
+
+async def obtener_miembros_grupo(grupo_id: str) -> dict:
+    try:
+        db             = get_database()
+        col_grupos     = db["Grupos"]
+        col_pacientes  = db["Pacientes"]
+        col_familiares = db["Familiares"]
+        col_ub_fam     = db["UbicacionesFamiliares"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            return {"error": "Grupo no encontrado"}
+
+        pacientes = []
+        for pid in grupo.get("paciente_ids", []):
+            try:
+                p = await col_pacientes.find_one({"_id": ObjectId(pid)})
+                if p:
+                    pacientes.append({
+                        "id":              str(p["_id"]),
+                        "nombre_paciente": p.get("nombre_paciente", ""),
+                        "enfermedad":      p.get("enfermedad", ""),
+                        "ultima_ubicacion": p.get("ultima_ubicacion"),
+                    })
+            except Exception:
+                pass
+
+        familiares = []
+        for fid in grupo.get("familiar_ids", []):
+            try:
+                f  = await col_familiares.find_one({"_id": ObjectId(fid)})
+                ub = await col_ub_fam.find_one({"familiar_id": fid})
+                if f:
+                    familiares.append({
+                        "id":    str(f["_id"]),
+                        "name":  f.get("name", ""),
+                        "email": f.get("email", ""),
+                        "ultima_ubicacion": {
+                            "latitud":   ub["latitud"],
+                            "longitud":  ub["longitud"],
+                            "timestamp": str(ub["timestamp"]),
+                        } if ub else None,
+                    })
+            except Exception:
+                pass
+
+        Logger.add_to_log("info", f"Miembros obtenidos para grupo: {grupo_id}")
+        return {"pacientes": pacientes, "familiares": familiares}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al obtener miembros del grupo: {ex}")
+        return {"error": str(ex)}

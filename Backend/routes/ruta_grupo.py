@@ -1,13 +1,20 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path
-from models.model_grupo import CrearGrupo, ActualizarGrupo, AgregarCuidador, AgregarPaciente, UbicacionCuidador
+from pydantic import BaseModel
+from models.model_grupo import CrearGrupo, ActualizarGrupo, AgregarCuidador, AgregarPaciente, UbicacionCuidador, UbicacionFamiliar
 from services.service_grupo import (
     listar_grupos, crear_grupo, eliminar_grupo, obtener_grupo, actualizar_grupo,
     agregar_cuidador, eliminar_cuidador,
     agregar_paciente,
-    guardar_ubicacion_cuidador, obtener_ubicaciones_grupo, obtener_cuidador_mas_cercano
+    guardar_ubicacion_cuidador, obtener_ubicaciones_grupo, obtener_cuidador_mas_cercano,
+    guardar_ubicacion_familiar, obtener_ubicaciones_grupo_familiar,
+    obtener_miembros_grupo,
+    unirse_a_grupo,
 )
-from security.dependencies import get_cuidador_actual
+from security.dependencies import get_cuidador_actual, get_familiar_actual
+
+class UnirseGrupo(BaseModel):
+    codigo: str
 
 MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 router = APIRouter(prefix="/grupos", tags=["Grupos"])
@@ -24,20 +31,20 @@ async def listar(cuidador_actual = Depends(get_cuidador_actual)):
     return resultado
 
 
-@router.post("/registrar")
-async def registrar(
-    datos: CrearGrupo,
-    cuidador_actual = Depends(get_cuidador_actual)
+@router.post("/unirse")
+async def unirse(
+    datos: UnirseGrupo,
+    familiar_actual = Depends(get_familiar_actual),
 ):
-    datos.cuidador_principal_id = str(cuidador_actual["_id"])
-    resultado = await crear_grupo(datos)
+    familiar_id = str(familiar_actual["_id"])
+    resultado   = await unirse_a_grupo(familiar_id, datos.codigo)
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado
 
 
-@router.post("/crear")
-async def crear(
+@router.post("/registrar")
+async def registrar(
     datos: CrearGrupo,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
@@ -140,6 +147,46 @@ async def guardar_ubicacion(
 @router.get("/{grupo_id}/ubicaciones")
 async def obtener_ubicaciones(grupo_id: str, cuidador_actual = Depends(get_cuidador_actual)):
     resultado = await obtener_ubicaciones_grupo(grupo_id, str(cuidador_actual["_id"]))
+    if "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    return resultado
+
+
+@router.get("/{grupo_id}/miembros")
+async def get_miembros(grupo_id: MongoId, cuidador_actual = Depends(get_cuidador_actual)):
+    resultado = await obtener_miembros_grupo(grupo_id)
+    if "error" in resultado:
+        raise HTTPException(status_code=404, detail=resultado["error"])
+    return resultado
+
+
+@router.get("/{grupo_id}/miembros/familiar")
+async def get_miembros_familiar(grupo_id: MongoId, familiar_actual = Depends(get_familiar_actual)):
+    resultado = await obtener_miembros_grupo(grupo_id)
+    if "error" in resultado:
+        raise HTTPException(status_code=404, detail=resultado["error"])
+    return resultado
+
+
+@router.post("/{grupo_id}/ubicacion/familiar")
+async def guardar_ubicacion_familiar_route(
+    grupo_id: MongoId,
+    datos: UbicacionFamiliar,
+    familiar_actual = Depends(get_familiar_actual)
+):
+    datos.familiar_id = str(familiar_actual["_id"])
+    resultado = await guardar_ubicacion_familiar(datos)
+    if "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
+@router.get("/{grupo_id}/ubicaciones/familiar")
+async def obtener_ubicaciones_familiar_route(
+    grupo_id: MongoId,
+    familiar_actual = Depends(get_familiar_actual)
+):
+    resultado = await obtener_ubicaciones_grupo_familiar(grupo_id, str(familiar_actual["_id"]))
     if "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     return resultado

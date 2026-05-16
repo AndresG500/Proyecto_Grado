@@ -1,8 +1,8 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, status
-from services.service_alerta import listar_alertas, obtener_alerta, actualizar_estado
+from services.service_alerta import listar_alertas, listar_alertas_familiar, obtener_alerta, actualizar_estado
 from models.model_alertas import RespuestaAlerta
-from security.dependencies import get_cuidador_actual
+from security.dependencies import get_cuidador_actual, get_familiar_actual
 
 router = APIRouter(prefix="/alertas", tags=["alertas"])
 
@@ -20,6 +20,11 @@ def _serializar(alerta: dict) -> dict:
 
 
 # BUG CORREGIDO: todos los endpoints ahora requieren JWT
+@router.get("/familiar/")
+async def alertas_familiar(familiar_actual = Depends(get_familiar_actual)):
+    return await listar_alertas_familiar(str(familiar_actual["_id"]))
+
+
 @router.get("/", response_model=list[RespuestaAlerta])
 async def alertas_listadas(
     paciente_id: Optional[str] = None,

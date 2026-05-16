@@ -1,24 +1,32 @@
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// En Expo Go SDK 53+ el módulo expo-notifications no soporta push remoto.
+// Se usa require condicional para evitar el error en el arranque.
+type NotificationsModule = typeof import('expo-notifications');
+const Notifications: NotificationsModule | null = IS_EXPO_GO
+  ? null
+  : (require('expo-notifications') as NotificationsModule);
+
+if (Notifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export async function registrarToken(): Promise<void> {
-  if (IS_EXPO_GO) {
+  if (!Notifications) {
     console.log('[Notificaciones] Ejecutando en Expo Go — usa un development build para notificaciones push');
     return;
   }
@@ -60,12 +68,13 @@ export function configurarListeners(
     lng: string;
   }) => void
 ): () => void {
-  if (IS_EXPO_GO) {
+  if (!Notifications) {
     console.log('[Notificaciones] Listeners omitidos en Expo Go');
     return () => {};
   }
 
-  const subs: Notifications.Subscription[] = [];
+  type Subscription = ReturnType<typeof Notifications.addNotificationReceivedListener>;
+  const subs: Subscription[] = [];
 
   subs.push(
     Notifications.addNotificationReceivedListener((notif) => {
