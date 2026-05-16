@@ -106,11 +106,13 @@ Each domain follows a three-layer pattern:
 
 **Push notifications:** Uses Expo Push API (not Firebase directly). `FCM/client.py` sends HTTP requests to `https://exp.host/--/api/v2/push/send`. Tokens stored as `fcm_token` on each `Cuidador` document; invalid tokens auto-cleaned after a `DeviceNotRegistered` error.
 
-**Rate limiting:** In-memory sliding-window middleware (30 req/60 s per IP) in `app.py`.
+**Rate limiting:** In-memory sliding-window middleware (120 req/60 s per IP) in `app.py`.
 
 **Real-time location (SSE):** The backend exposes `GET /pacientes/{id}/ubicacion/stream`. The internal `EventBus` (`utils/eventos.py`) is a pub/sub over `asyncio.Queue`; MQTT messages publish to topic `ubicacion/<paciente_id>` and the SSE endpoint subscribes to it.
 
 **Logging:** Use `Logger.add_to_log("info"|"warn"|"error", mensaje)` from `utils/Logger.py` in all backend services and tasks (not `print()` or `logging` directly, except in `service_alerta.py` which uses `logging`).
+
+**Create/delete response shape:** Several services return `{"mensaje": "..."}` on success rather than the created document. For example, `service_zonasegura.py` returns `{"mensaje": "Zona segura creada exitosamente"}` after `insert_one`. Frontend must call a full reload after these operations — never append `res.data` to local state. Always filter reloaded arrays with `.filter(item => !!item.id)` to discard stale message objects.
 
 ### Critical document field names
 
