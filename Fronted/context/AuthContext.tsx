@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as SecureStore from 'expo-secure-store'
 import axios from 'axios'
 import { registrarLogout } from '@/services/api'
 
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const init = async () => {
     try {
-      const t    = await AsyncStorage.getItem('token')
+      const t    = await SecureStore.getItemAsync('token')
       const c    = await AsyncStorage.getItem('cuidador')
       const tipo = await AsyncStorage.getItem('tipoUsuario') as TipoUsuario | null
 
@@ -52,7 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCuidador(c ? JSON.parse(c) : null)
           setTipoUsuario(tipo ?? 'cuidador')
         } catch {
-          await AsyncStorage.multiRemove(['token', 'cuidador', 'tipoUsuario'])
+          await SecureStore.deleteItemAsync('token')
+          await AsyncStorage.multiRemove(['cuidador', 'tipoUsuario'])
         }
       }
     } finally {
@@ -61,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = async (newToken: string, cuidadorData: Cuidador, tipo: TipoUsuario = 'cuidador') => {
-    await AsyncStorage.setItem('token',       newToken)
+    await SecureStore.setItemAsync('token',    newToken)
     await AsyncStorage.setItem('cuidador',    JSON.stringify(cuidadorData))
     await AsyncStorage.setItem('tipoUsuario', tipo)
     setToken(newToken)
@@ -70,7 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
-    await AsyncStorage.multiRemove(['token', 'cuidador', 'tipoUsuario'])
+    await SecureStore.deleteItemAsync('token')
+    await AsyncStorage.multiRemove(['cuidador', 'tipoUsuario'])
     setToken(null)
     setCuidador(null)
     setTipoUsuario('cuidador')

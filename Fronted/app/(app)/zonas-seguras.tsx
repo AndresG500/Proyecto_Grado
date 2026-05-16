@@ -4,7 +4,7 @@ import {
   ScrollView, ActivityIndicator, Alert, Dimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import MapView, { Circle, Marker, MapPressEvent, Region, UrlTile } from 'react-native-maps'
+import WebView from 'react-native-webview'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
@@ -13,16 +13,77 @@ import { useAuth } from '@/context/AuthContext'
 
 const { height: SCREEN_H } = Dimensions.get('window')
 
-const SANTA_MARTA: Region = {
-  latitude: 11.2404, longitude: -74.211,
-  latitudeDelta: 0.04, longitudeDelta: 0.04,
-}
+const ZONA_MAP_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+        crossorigin="anonymous"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+          crossorigin="anonymous"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    #map { height: 100vh; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: true }).setView([11.2404, -74.2110], 14);
+    L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
+      maxZoom: 19, attribution: ''
+    }).addTo(map);
+
+    var marcador = null;
+    var circulo  = null;
+    var radioActual = 150;
+
+    var shieldIcon = L.divIcon({
+      html: '<div style="background:#2563eb;width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35);color:white;font-size:18px;">&#10003;</div>',
+      className: '',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+
+    map.on('click', function(e) {
+      var lat = e.latlng.lat;
+      var lng = e.latlng.lng;
+      if (marcador) { marcador.setLatLng([lat, lng]); }
+      else { marcador = L.marker([lat, lng], { icon: shieldIcon }).addTo(map); }
+      if (circulo) { circulo.setLatLng([lat, lng]); }
+      else {
+        circulo = L.circle([lat, lng], {
+          radius: radioActual,
+          fillColor: '#2563eb',
+          fillOpacity: 0.15,
+          color: '#2563eb',
+          weight: 2
+        }).addTo(map);
+      }
+      window.ReactNativeWebView.postMessage(JSON.stringify({ lat: lat, lng: lng }));
+    });
+
+    function updateRadio(r) {
+      radioActual = r;
+      if (circulo) circulo.setRadius(r);
+    }
+
+    function limpiar() {
+      if (marcador) { map.removeLayer(marcador); marcador = null; }
+      if (circulo)  { map.removeLayer(circulo);  circulo  = null; }
+    }
+  </script>
+</body>
+</html>`
 
 type Coord = { latitud: number; longitud: number }
 
 export default function ZonasSeguras() {
   const router  = useRouter()
-  const mapRef  = useRef<MapView>(null)
+  const mapRef  = useRef<WebView>(null)
   const { tipoUsuario } = useAuth()
   const esFamiliar = tipoUsuario === 'familiar'
 
@@ -73,10 +134,11 @@ export default function ZonasSeguras() {
 
   useEffect(() => { cargar() }, [])
 
-  const handleMapPress = (e: MapPressEvent) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate
-    setCentro({ latitud: latitude, longitud: longitude })
-  }
+  useEffect(() => {
+    if (!creando) return
+    const radioNum = parseInt(radio) || 150
+    mapRef.current?.injectJavaScript(`updateRadio(${radioNum}); true;`)
+  }, [radio, creando])
 
   const handleCrear = async () => {
     if (!nombre.trim()) { Alert.alert('Falta el nombre', 'Escribe un nombre para la zona.'); return }
@@ -124,43 +186,22 @@ export default function ZonasSeguras() {
 
   // ── Vista de creación con mapa ─────────────────────────────────────────
   if (creando) {
-    const radioNum = parseInt(radio) || 150
     return (
       <View style={{ flex: 1 }}>
-        {/* Mapa interactivo */}
-        <MapView
+        <WebView
           ref={mapRef}
           style={styles.mapCrear}
-          initialRegion={SANTA_MARTA}
-          onPress={handleMapPress}
-          showsUserLocation
-          rotateEnabled={false}
-          toolbarEnabled={false}
-          mapType="none"
-        >
-          <UrlTile
-            urlTemplate={`https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}`}
-            maximumZ={19}
-          />
-          {centro && (
-            <>
-              <Marker coordinate={{ latitude: centro.latitud, longitude: centro.longitud }}>
-                <View style={styles.markerWrap}>
-                  <Ionicons name="shield-checkmark" size={16} color={Colors.white} />
-                </View>
-              </Marker>
-              <Circle
-                center={{ latitude: centro.latitud, longitude: centro.longitud }}
-                radius={radioNum}
-                fillColor="rgba(37,99,235,0.15)"
-                strokeColor={Colors.primary}
-                strokeWidth={2}
-              />
-            </>
-          )}
-        </MapView>
+          source={{ html: ZONA_MAP_HTML }}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          onMessage={(e) => {
+            try {
+              const { lat, lng } = JSON.parse(e.nativeEvent.data)
+              setCentro({ latitud: lat, longitud: lng })
+            } catch {}
+          }}
+        />
 
-        {/* Instrucción flotante */}
         {!centro && (
           <View style={styles.hint}>
             <Ionicons name="finger-print-outline" size={18} color={Colors.white} />
@@ -168,7 +209,6 @@ export default function ZonasSeguras() {
           </View>
         )}
 
-        {/* Panel inferior */}
         <SafeAreaView style={styles.panel} edges={['bottom']}>
           <View style={styles.panelHandle} />
 
@@ -214,7 +254,9 @@ export default function ZonasSeguras() {
               <Text style={styles.coordText}>
                 {centro.latitud.toFixed(5)}, {centro.longitud.toFixed(5)}
               </Text>
-              <TouchableOpacity onPress={() => setCentro(null)} style={{ marginLeft: 8 }}>
+              <TouchableOpacity
+                onPress={() => { setCentro(null); mapRef.current?.injectJavaScript('limpiar(); true;') }}
+                style={{ marginLeft: 8 }}>
                 <Ionicons name="close-circle" size={16} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -326,7 +368,6 @@ const styles = StyleSheet.create({
   mapCrear: { flex: 1, height: SCREEN_H * 0.52 },
   hint:     { position: 'absolute', top: 52, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   hintText: { color: Colors.white, fontSize: 13, fontWeight: '500' },
-  markerWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: Colors.white, elevation: 4 },
 
   panel: { backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12, elevation: 16 },
   panelHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 16 },

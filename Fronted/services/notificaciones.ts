@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -46,7 +46,7 @@ export async function registrarToken(): Promise<void> {
 
     if (!token.data) return;
 
-    const tokenStr = await AsyncStorage.getItem('token');
+    const tokenStr = await SecureStore.getItemAsync('token');
     if (!tokenStr) return;
 
     await axios.patch(

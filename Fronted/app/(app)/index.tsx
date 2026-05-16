@@ -37,7 +37,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
   const markersJs = pacientes.map((pac) => {
     const id     = pac.id_paciente ?? pac.id
-    const nombre = (pac.nombre_paciente ?? '').replace(/'/g, "\\'")
+    const nombre = JSON.stringify(pac.nombre_paciente ?? '')
     const ub     = pac.ultima_ubicacion
     if (!ub) return ''
     const lat = ub.latitud  ?? ub.lat  ?? 0
@@ -45,7 +45,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     return `
       (function() {
         var m = L.marker([${lat}, ${lng}], { icon: personIcon }).addTo(map);
-        m.bindPopup('${nombre}');
+        m.bindPopup(${nombre});
         markers['${id}'] = m;
       })();`
   }).join('\n')
@@ -74,8 +74,12 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+        crossorigin="anonymous"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+          crossorigin="anonymous"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; }

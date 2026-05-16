@@ -5,10 +5,10 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { useAuth } from '@/context/AuthContext'
-import { cuidadorService } from '@/services/api'
+import { cuidadorService, familiarService } from '@/services/api'
 
 export default function PerfilScreen() {
-  const { cuidador, logout } = useAuth()
+  const { cuidador, logout, tipoUsuario } = useAuth()
   const router = useRouter()
   const [nombre,   setNombre]   = useState(cuidador?.name  ?? '')
   const [telefono, setTelefono] = useState(cuidador?.phone ?? '')
@@ -32,9 +32,12 @@ export default function PerfilScreen() {
     Alert.alert('Cerrar sesión', '¿Estás seguro de que quieres salir?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Cerrar sesión', style: 'destructive', onPress: async () => {
-          await cuidadorService.logout()
+          if (tipoUsuario === 'familiar') {
+            await familiarService.logout()
+          } else {
+            await cuidadorService.logout()
+          }
           await logout()
-          // AuthGuard detecta token === null y redirige a /login automáticamente
         }},
     ])
   }

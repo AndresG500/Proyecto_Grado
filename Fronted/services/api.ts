@@ -1,12 +1,12 @@
 import axios from 'axios'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as SecureStore from 'expo-secure-store'
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000'
 
 const api = axios.create({ baseURL: BASE_URL, timeout: 8000 })
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('token')
+  const token = await SecureStore.getItemAsync('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -64,6 +64,8 @@ export const familiarService = {
   misGrupos: () => api.get('/familiares/grupos'),
 
   misPacientes: () => api.get('/familiares/pacientes'),
+
+  logout: () => api.post('/familiares/logout').catch(() => {}),
 }
 
 // ── Pacientes ──────────────────────────────────────────────────────────────
