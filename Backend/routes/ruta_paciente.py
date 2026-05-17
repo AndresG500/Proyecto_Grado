@@ -25,6 +25,14 @@ async def registrar(
     return resultado
 
 
+@router.get("/")
+async def listar(cuidador_actual = Depends(get_cuidador_actual)):
+    resultado = await listar_pacientes(cuidador_actual["email"])
+    if "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
 @router.get("/{patient_id}")
 async def obtener(
     patient_id: str,
@@ -104,11 +112,3 @@ async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)
             "Connection": "keep-alive",
         },
     )
-
-
-@router.get("/")
-async def listar(cuidador_actual = Depends(get_cuidador_actual)):
-    resultado = await listar_pacientes(cuidador_actual["email"])
-    if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
-    return resultado

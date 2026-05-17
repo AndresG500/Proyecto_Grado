@@ -85,6 +85,8 @@ export const pacienteService = {
 
   actualizar: (id: string, datos: any) => api.put(`/pacientes/${id}`, datos),
 
+  eliminar: (id: string) => api.delete(`/pacientes/${id}`),
+
   ultimaUbicacion: (id: string) => api.get(`/historial-ubicaciones/ultima/${id}`),
 
   ruta: (id: string) => api.get(`/historial-ubicaciones/ruta/${id}`),
@@ -160,6 +162,23 @@ export const grupoService = {
   miembros: (id: string) => api.get(`/grupos/${id}/miembros`),
 
   miembrosFamiliar: (id: string) => api.get(`/grupos/${id}/miembros/familiar`),
+}
+
+// ── Modo Viaje ─────────────────────────────────────────────────────────────
+
+type ActivarModoViajePayload = {
+  paciente_id: string
+  tipo: 'caminata' | 'vehiculo'
+  duracion_horas?: number | null
+}
+
+export const modoViajeService = {
+  activar:           (data: ActivarModoViajePayload) => api.post('/modo-viaje/activar', data),
+  desactivar:        (pacienteId: string)            => api.post(`/modo-viaje/desactivar/${pacienteId}`),
+  estado:            (pacienteId: string)            => api.get(`/modo-viaje/${pacienteId}`),
+  activarFamiliar:   (data: ActivarModoViajePayload) => api.post('/modo-viaje/familiar/activar', data),
+  desactivarFamiliar:(pacienteId: string)            => api.post(`/modo-viaje/familiar/desactivar/${pacienteId}`),
+  estadoFamiliar:    (pacienteId: string)            => api.get(`/modo-viaje/familiar/${pacienteId}`),
 }
 
 export default api

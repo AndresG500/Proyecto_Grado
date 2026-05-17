@@ -20,7 +20,11 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
             "nombre_paciente":    datos.nombre_paciente,
             "edad_paciente":      datos.edad_paciente,
             "enfermedad":         datos.enfermedad,
-            "id_cuidador":        str(cuidador["_id"]),  # ← toma el _id real del cuidador
+            "cedula":             datos.cedula,
+            "eps":                datos.eps,
+            "familiar_nombre":    datos.familiar_nombre,
+            "familiar_telefono":  datos.familiar_telefono,
+            "id_cuidador":        str(cuidador["_id"]),
             "id_dispositivo":     datos.id_dispositivo,
             "fuera_de_zona":       False,
             "ultima_alerta_timestamp": None,
@@ -124,8 +128,16 @@ async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente, cuidad
             campos["nombre_paciente"] = datos.nombre_paciente
         if datos.edad_paciente is not None:
             campos["edad_paciente"] = datos.edad_paciente
-        if datos.enfermedad:
+        if datos.enfermedad is not None:
             campos["enfermedad"] = datos.enfermedad
+        if datos.cedula is not None:
+            campos["cedula"] = datos.cedula
+        if datos.eps is not None:
+            campos["eps"] = datos.eps
+        if datos.familiar_nombre is not None:
+            campos["familiar_nombre"] = datos.familiar_nombre
+        if datos.familiar_telefono is not None:
+            campos["familiar_telefono"] = datos.familiar_telefono
         if datos.id_dispositivo:
             campos["id_dispositivo"] = datos.id_dispositivo
 

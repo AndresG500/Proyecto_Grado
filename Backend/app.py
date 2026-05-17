@@ -17,6 +17,7 @@ from routes.ruta_zonasegura import router as zona_segura_router
 from routes.ruta_grupo import router as grupo_router
 from routes.ruta_alerta import router as alerta_router
 from routes.ruta_familiar import router as familiar_router
+from routes.ruta_modo_viaje import router as modo_viaje_router
 from services.service_alerta import reenviar_alertas_activas
 from utils.Logger import Logger
 
@@ -45,6 +46,8 @@ async def lifespan(app: FastAPI):
     db = get_database()
     # TTL: borra tokens revocados automáticamente cuando expira el JWT
     await db["TokensRevocados"].create_index("exp", expireAfterSeconds=0)
+    # TTL: borra ubicaciones de cuidadores si no se actualizan en 15 min
+    await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
 
     alertas_task = asyncio.create_task(tarea_alertas())
     mqtt_task = asyncio.create_task(mqtt_subscriber_task())
@@ -119,6 +122,7 @@ app.include_router(zona_segura_router)
 app.include_router(grupo_router)
 app.include_router(alerta_router)
 app.include_router(familiar_router)
+app.include_router(modo_viaje_router)
 
 
 @app.get("/")

@@ -116,10 +116,10 @@ export default function AlertasScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: Colors.primary },
+  root:   { flex: 1, backgroundColor: '#102e50' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20, gap: 14 },
   backBtn:     { padding: 4 },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: Colors.white },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: Colors.white, justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
   emptyText: { fontSize: 16, color: Colors.primaryLight, textAlign: 'center' },
   list:   { padding: 16, gap: 12 },

@@ -20,6 +20,7 @@ export default function AppLayout() {
         <Drawer.Screen name="zonas-seguras" />
         <Drawer.Screen name="historial-ubicaciones" />
         <Drawer.Screen name="grupo-familiar" />
+        <Drawer.Screen name="pacientes" />
         <Drawer.Screen name="registro-paciente" />
         <Drawer.Screen name="vincular-dispositivo" />
         <Drawer.Screen name="perfil" />

@@ -7,7 +7,7 @@ from database.database import get_database
 from models.model_historial import HistorialUbicacionBase, CoordenadasPaciente
 from services.service_historial import registrar_ubicacion
 from utils.Logger import Logger
-from services.service_alerta import evaluar_zonas_seguras
+from services.service_alerta import procesar_ubicacion_paciente
 from utils.eventos import bus_eventos
 from datetime import datetime, timezone
 
@@ -86,11 +86,11 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         f"GPS guardado | dispositivo={id_dispositivo} paciente={paciente_id} lat={lat} lng={lng}",
     )
 
-    # ── 5. Evaluar geocercas y emitir evento SSE ──────────────────────────────
+    # ── 5. Evaluar alertas (geocercas + modo viaje + anomalía velocidad) ────────
     try:
-        await evaluar_zonas_seguras(str(paciente_id), float(lat), float(lng))
+        await procesar_ubicacion_paciente(str(paciente_id), float(lat), float(lng))
     except Exception as ex:
-        Logger.add_to_log("error", f"Error evaluando zonas seguras: {ex}")
+        Logger.add_to_log("error", f"Error procesando ubicación paciente: {ex}")
 
     await bus_eventos.publicar(
         topic=f"ubicacion/{paciente_id}",

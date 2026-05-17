@@ -215,14 +215,14 @@ export default function GrupoFamiliarScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     )
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
@@ -421,19 +421,19 @@ export default function GrupoFamiliarScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: Colors.primary },
-  header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, gap: 14 },
+  root:        { flex: 1, backgroundColor: '#102e50' },
+  header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, gap: 14, backgroundColor: '#102e50' },
   backBtn:     { padding: 4 },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: Colors.white },
   addBtn:      { padding: 4 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content:     { flex: 1, backgroundColor: Colors.background },
+  content:     { flex: 1, backgroundColor: '#f7fbfc' },
 
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, padding: 32 },
   emptyIcon:  { width: 96, height: 96, borderRadius: 48, backgroundColor: Colors.primaryBg, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   emptyDesc:  { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  createBtn:  { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, gap: 8 },
+  createBtn:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#102e50', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, gap: 8 },
   createBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
 
   grupoCard:   { backgroundColor: Colors.white, borderRadius: 20, padding: 20, elevation: 2 },
@@ -478,6 +478,6 @@ const styles = StyleSheet.create({
   pacChipActivo:     { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
   pacChipText:       { fontSize: 13, color: Colors.textSecondary },
   pacChipTextActivo: { color: Colors.primary, fontWeight: '700' },
-  modalBtn:     { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  modalBtn:     { backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   modalBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 })

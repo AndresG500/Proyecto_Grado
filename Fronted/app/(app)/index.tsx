@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native'
 import WebView from 'react-native-webview'
 import { DrawerActions, useNavigation, useFocusEffect } from '@react-navigation/native'
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
-import { pacienteService, zonaService, familiarService, grupoService } from '@/services/api'
+import { pacienteService, zonaService, familiarService, grupoService, alertaService, modoViajeService } from '@/services/api'
+import ModoViajeModal from '@/components/ModoViajeModal'
 import { useSSEUbicacion } from '@/hooks/useSSEUbicacion'
 import { useAuth } from '@/context/AuthContext'
 import * as Location from 'expo-location'
@@ -37,15 +39,18 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
   const markersJs = pacientes.map((pac) => {
     const id     = pac.id_paciente ?? pac.id
-    const nombre = JSON.stringify(pac.nombre_paciente ?? '')
+    const nombre = (pac.nombre_paciente ?? '').replace(/'/g, "\\'")
     const ub     = pac.ultima_ubicacion
     if (!ub) return ''
     const lat = ub.latitud  ?? ub.lat  ?? 0
     const lng = ub.longitud ?? ub.lng  ?? 0
     return `
       (function() {
-        var m = L.marker([${lat}, ${lng}], { icon: personIcon }).addTo(map);
-        m.bindPopup(${nombre});
+        pacienteNames['${id}'] = '${nombre}';
+        var m = L.marker([${lat}, ${lng}], { icon: crearIconoPaciente('${nombre}') }).addTo(map);
+        m.on('click', function() {
+          window.ReactNativeWebView.postMessage(JSON.stringify({tipo:'select_paciente',id:'${id}'}));
+        });
         markers['${id}'] = m;
       })();`
   }).join('\n')
@@ -89,36 +94,42 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map', { zoomControl: false }).setView([11.2404, -74.2110], 14);
+    var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.2404, -74.2110], 14);
     L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
-      maxZoom: 19, attribution: ''
+      maxZoom: 19,
     }).addTo(map);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     var markers = {};
     var cuidadorMarkers = {};
     var familiarMarkers = {};
     var zoneCircles = {};
+    var pacienteNames = {};
 
-    var personIcon = L.divIcon({
-      html: '<div style="background:#2563eb;width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"14\\" height=\\"14\\" viewBox=\\"0 0 24 24\\" fill=\\"white\\"><path d=\\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\\"/></svg></div>',
-      className: '',
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
-    });
+    function crearIconoPaciente(nombre) {
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:center;">' +
+          '<div style="width:36px;height:36px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white">' +
+              '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
+            '</svg>' +
+          '</div>' +
+          '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#102e50;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + nombre + '</div>' +
+        '</div>';
+      return L.divIcon({ html: html, className: '', iconSize: [90, 58], iconAnchor: [45, 18] });
+    }
 
     var cuidadorIcon = L.divIcon({
-      html: '<div style="background:#16a34a;width:28px;height:28px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"12\\" height=\\"12\\" viewBox=\\"0 0 24 24\\" fill=\\"white\\"><path d=\\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\\"/></svg></div>',
+      html: '<div style="width:30px;height:30px;border-radius:50%;background:#16a34a;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></div>',
       className: '',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
     });
 
     var familiarIcon = L.divIcon({
-      html: '<div style="background:#9333ea;width:28px;height:28px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"12\\" height=\\"12\\" viewBox=\\"0 0 24 24\\" fill=\\"white\\"><path d=\\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\\"/></svg></div>',
+      html: '<div style="width:30px;height:30px;border-radius:50%;background:#9333ea;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></div>',
       className: '',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
     });
 
     ${zonesJs}
@@ -126,11 +137,18 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     ${cuidadorMarkersJs}
     ${familiarMarkersJs}
 
+    // Auto-zoom al cargar para mostrar todos los marcadores
+    setTimeout(function() { fitAll(); }, 200);
+
     function updateMarker(id, lat, lng) {
       if (markers[id]) {
         markers[id].setLatLng([lat, lng]);
       } else {
-        var m = L.marker([lat, lng], { icon: personIcon }).addTo(map);
+        var nombre = pacienteNames[id] || 'Paciente';
+        var m = L.marker([lat, lng], { icon: crearIconoPaciente(nombre) }).addTo(map);
+        m.on('click', function() {
+          window.ReactNativeWebView.postMessage(JSON.stringify({tipo:'select_paciente',id:id}));
+        });
         markers[id] = m;
       }
     }
@@ -159,6 +177,16 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       map.flyTo([lat, lng], 16, { duration: 0.8 });
     }
 
+    function fitAll() {
+      var positions = [];
+      Object.values(markers).forEach(function(m) { positions.push(m.getLatLng()); });
+      Object.values(cuidadorMarkers).forEach(function(m) { positions.push(m.getLatLng()); });
+      Object.values(familiarMarkers).forEach(function(m) { positions.push(m.getLatLng()); });
+      if (positions.length === 0) return;
+      if (positions.length === 1) { map.setView(positions[0], 16); return; }
+      map.fitBounds(L.latLngBounds(positions), { padding: [70, 70], maxZoom: 17 });
+    }
+
     function addOrUpdateZone(id, lat, lng, radio, activa) {
       var color = activa ? '#2563eb' : '#888888';
       var opts = { radius: radio, fillColor: color, fillOpacity: 0.15, color: color, weight: 2 };
@@ -177,9 +205,13 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
 export default function MapScreen() {
   const navigation  = useNavigation()
+  const router      = useRouter()
   const { tipoUsuario, cuidador } = useAuth()
   const webViewRef  = useRef<WebView>(null)
-  const [pacientes,  setPacientes]  = useState<any[]>([])
+  const [pacientes,          setPacientes]          = useState<any[]>([])
+  const [alertasPendientes,  setAlertasPendientes]  = useState(0)
+  const [estadoViaje,        setEstadoViaje]        = useState<any>(null)
+  const [showModoViaje,      setShowModoViaje]      = useState(false)
   const [online,     setOnline]     = useState(true)
   const [loading,    setLoading]    = useState(true)
   const [mapHtml,    setMapHtml]    = useState('')
@@ -189,7 +221,6 @@ export default function MapScreen() {
   const zonasRef          = useRef<any[]>([])
   const mapaListo         = useRef(false)
 
-  // Los familiares no pueden acceder al stream SSE (requiere token de cuidador)
   const { ubicacion, conectado } = useSSEUbicacion(tipoUsuario === 'familiar' ? null : selPacId)
 
   const cargarDatos = useCallback(async () => {
@@ -202,6 +233,26 @@ export default function MapScreen() {
 
       if (pacs.length > 0 && !selPacId) {
         setSelPacId(pacs[0].id_paciente ?? pacs[0].id)
+      }
+
+      try {
+        const resAlertas = tipoUsuario === 'familiar'
+          ? await alertaService.listarFamiliar()
+          : await alertaService.listar()
+        const alertas: any[] = Array.isArray(resAlertas.data) ? resAlertas.data : []
+        setAlertasPendientes(alertas.filter((a: any) => a.estado === 'pendiente').length)
+      } catch {}
+
+      if (pacs.length > 0) {
+        const primerId = pacs[0].id_paciente ?? pacs[0].id
+        try {
+          const resModo = tipoUsuario === 'familiar'
+            ? await modoViajeService.estadoFamiliar(primerId)
+            : await modoViajeService.estado(primerId)
+          setEstadoViaje(resModo.data ?? null)
+        } catch {
+          setEstadoViaje(null)
+        }
       }
 
       const todasZonas: any[] = []
@@ -219,12 +270,10 @@ export default function MapScreen() {
         }
       }
 
-      // Cargar ubicaciones de miembros del grupo
       const todasUbicaciones: UbicacionCuidador[] = []
       const todasFamiliares:  UbicacionFamiliar[]  = []
 
       if (tipoUsuario !== 'familiar') {
-        // Cuidador: obtener ubicaciones de otros cuidadores
         try {
           const resGrupos = await grupoService.listar()
           const gruposList: any[] = Array.isArray(resGrupos.data) ? resGrupos.data : []
@@ -235,7 +284,6 @@ export default function MapScreen() {
           }
         } catch {}
       } else {
-        // Familiar: obtener ubicaciones de cuidadores y otros familiares del grupo
         try {
           const resGrupos = await familiarService.misGrupos()
           const gruposList: any[] = Array.isArray(resGrupos.data) ? resGrupos.data : []
@@ -254,11 +302,9 @@ export default function MapScreen() {
       setOnline(true)
 
       if (!mapaListo.current) {
-        // Primera carga: construir el HTML completo con Leaflet
         setMapHtml(buildMapHTML(pacs, todasZonas, todasUbicaciones, todasFamiliares))
         mapaListo.current = true
       } else {
-        // Recargas siguientes: actualizar marcadores y zonas via inject
         for (const z of todasZonas) {
           const lat = z.centro?.latitud
           const lng = z.centro?.longitud
@@ -277,7 +323,6 @@ export default function MapScreen() {
           webViewRef.current?.injectJavaScript(js)
         }
         if (tipoUsuario === 'familiar') {
-          // Actualizar marcadores de pacientes (sin SSE, basado en ultima_ubicacion)
           for (const p of pacs) {
             const ub = p.ultima_ubicacion
             if (!ub) continue
@@ -310,7 +355,6 @@ export default function MapScreen() {
     webViewRef.current?.injectJavaScript(js)
   }, [ubicacion, selPacId])
 
-  // Rastrear y publicar la posición propia (cuidadores)
   useEffect(() => {
     if (tipoUsuario === 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
@@ -330,7 +374,6 @@ export default function MapScreen() {
     return () => { suscripcion?.remove() }
   }, [tipoUsuario, cuidador])
 
-  // Rastrear y publicar la posición propia (familiares)
   useEffect(() => {
     if (tipoUsuario !== 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
@@ -351,22 +394,28 @@ export default function MapScreen() {
     return () => { suscripcion?.remove() }
   }, [tipoUsuario, cuidador])
 
-  // Cuando el usuario vuelve a esta pantalla, refresca zonas y ubicaciones
   useFocusEffect(
     useCallback(() => {
       if (mapaListo.current) cargarDatos()
     }, [cargarDatos])
   )
 
-  const irAPaciente = (pac: any) => {
-    const id = pac.id_paciente ?? pac.id
-    setSelPacId(id)
-    const ub = pac.ultima_ubicacion
-    if (!ub) return
-    const lat = ub.latitud  ?? ub.lat
-    const lng = ub.longitud ?? ub.lng
-    if (lat == null || lng == null) return
-    webViewRef.current?.injectJavaScript(`flyTo(${lat}, ${lng}); true;`)
+  const handleMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data)
+      if (data.tipo === 'select_paciente') {
+        const id = data.id
+        setSelPacId(id)
+        const pac = pacientes.find((p: any) => (p.id_paciente ?? p.id) === id)
+        if (pac?.ultima_ubicacion) {
+          const lat = pac.ultima_ubicacion.latitud ?? pac.ultima_ubicacion.lat
+          const lng = pac.ultima_ubicacion.longitud ?? pac.ultima_ubicacion.lng
+          if (lat != null && lng != null) {
+            webViewRef.current?.injectJavaScript(`flyTo(${lat}, ${lng}); true;`)
+          }
+        }
+      }
+    } catch {}
   }
 
   return (
@@ -380,6 +429,7 @@ export default function MapScreen() {
           javaScriptEnabled
           domStorageEnabled
           startInLoadingState
+          onMessage={handleMessage}
           renderLoading={() => (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -397,7 +447,7 @@ export default function MapScreen() {
         onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
         activeOpacity={0.85}
       >
-        <Ionicons name="menu" size={24} color={Colors.primary} />
+        <Ionicons name="menu" size={24} color={'#102e50'} />
       </TouchableOpacity>
 
       <View style={[styles.statusBadge, !online && styles.statusBadgeOffline]}>
@@ -409,29 +459,44 @@ export default function MapScreen() {
         </Text>
       </View>
 
-      {pacientes.length > 0 && (
-        <View style={styles.pacientesBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {pacientes.map((pac) => {
-              const id = pac.id_paciente ?? pac.id
-              const activo = selPacId === id
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[styles.pacienteChip, activo && styles.pacienteChipActivo]}
-                  onPress={() => irAPaciente(pac)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.chipDot, activo && styles.chipDotActivo]} />
-                  <Text style={[styles.chipText, activo && styles.chipTextActivo]} numberOfLines={1}>
-                    {pac.nombre_paciente}
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </ScrollView>
-        </View>
-      )}
+      <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push('/(app)/alertas' as any)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="notifications" size={22} color={'#102e50'} />
+        {alertasPendientes > 0 && (
+          <View style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>
+              {alertasPendientes > 9 ? '9+' : String(alertasPendientes)}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.viajeBtn, estadoViaje?.activo && styles.viajeBtnActive]}
+        onPress={() => setShowModoViaje(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name={estadoViaje?.activo ? 'airplane' : 'airplane-outline'}
+          size={22}
+          color={estadoViaje?.activo ? '#16a34a' : '#102e50'}
+        />
+        {estadoViaje?.activo && <View style={styles.viajeBadge} />}
+      </TouchableOpacity>
+
+      <ModoViajeModal
+        visible={showModoViaje}
+        onClose={() => setShowModoViaje(false)}
+        pacientes={pacientes.map((p) => ({
+          id:     p.id_paciente ?? p.id,
+          nombre: p.nombre_paciente ?? 'Paciente',
+        }))}
+        estadoActivo={estadoViaje}
+        onCambio={cargarDatos}
+      />
     </View>
   )
 }
@@ -447,7 +512,7 @@ const styles = StyleSheet.create({
 
   menuBtn: {
     position: 'absolute', top: 52, left: 16,
-    width: 48, height: 48, borderRadius: 14,
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: Colors.white,
     justifyContent: 'center', alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
@@ -469,20 +534,41 @@ const styles = StyleSheet.create({
   statusText:         { fontSize: 13, fontWeight: '600', color: Colors.text },
   statusTextOffline:  { color: Colors.warning },
 
-  pacientesBar: {
-    position: 'absolute', bottom: 24, left: 16, right: 16,
-  },
-  pacienteChip: {
-    flexDirection: 'row', alignItems: 'center',
+  bellBtn: {
+    position: 'absolute', top: 108, right: 16,
+    width: 40, height: 40, borderRadius: 22,
     backgroundColor: Colors.white,
-    borderRadius: 20, paddingVertical: 8, paddingHorizontal: 14, gap: 7,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12, shadowRadius: 6, elevation: 4,
-    borderWidth: 1.5, borderColor: 'transparent',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15, shadowRadius: 8, elevation: 6,
   },
-  pacienteChipActivo: { borderColor: Colors.primary },
-  chipDot:            { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.textSecondary },
-  chipDotActivo:      { backgroundColor: Colors.success },
-  chipText:           { fontSize: 13, fontWeight: '600', color: Colors.text, maxWidth: 120 },
-  chipTextActivo:     { color: Colors.primary },
+  bellBadge: {
+    position: 'absolute', top: 6, right: 6,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.error,
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  bellBadgeText: {
+    fontSize: 10, fontWeight: '700', color: Colors.white,
+  },
+
+  viajeBtn: {
+    position: 'absolute', top: 164, right: 16,
+    width: 40, height: 40, borderRadius: 22,
+    backgroundColor: Colors.white,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15, shadowRadius: 8, elevation: 6,
+  },
+  viajeBtnActive: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#16a34a',
+  },
+  viajeBadge: {
+    position: 'absolute', top: 8, right: 8,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#16a34a',
+  },
 })

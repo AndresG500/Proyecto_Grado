@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, ImageBackground } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
@@ -8,8 +8,14 @@ export default function ElegirRolScreen() {
   const router = useRouter()
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.bgTop} />
+    <ImageBackground
+      source={require('@/assets/images/map-bg.jpg')}
+      style={styles.root}
+      resizeMode="cover"
+      blurRadius={0.5}
+    >
+      <View style={styles.overlay} />
+      <SafeAreaView style={{ flex: 1 }}>
 
       <View style={styles.content}>
         <View style={styles.iconWrap}>
@@ -56,24 +62,19 @@ export default function ElegirRolScreen() {
           activeOpacity={0.7}
         >
           <Text style={styles.loginText}>
-            Already have an account?{' '}
-            <Text style={styles.loginHighlight}>Sign in</Text>
+            ¿Ya tienes cuenta?{' '}
+            <Text style={styles.loginHighlight}>Inicia sesión</Text>
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   )
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-  },
-  bgTop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.primary,
-  },
+  root:    { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20, 50, 160, 0.78)' },
   content: {
     flex: 1,
     padding: 24,

@@ -53,6 +53,8 @@ MQTT_HOST=...hivemq.cloud
 MQTT_PORT=8883
 MQTT_USER=...
 MQTT_PASS=...
+SENTRY_DSN=...   # optional; omit to disable Sentry
+ENVIRONMENT=production   # optional; hides /docs and /redoc when set
 ```
 
 ### Seeding demo data
@@ -94,6 +96,8 @@ Each domain follows a three-layer pattern:
 
 **MongoDB collections:** `Cuidadores`, `Familiares`, `Pacientes`, `Dispositivos`, `DispositivosDisponibles`, `ZonasSeguras`, `Grupos`, `Alertas`, `Historial`, `TokensRevocados`
 
+**Modo Viaje:** When a cuidador or familiar activates travel mode, `service_modo_viaje.py` writes `modo_viaje_activo`, `modo_viaje_tipo` (`"caminata"` or `"vehiculo"`), `modo_viaje_inicio`, `modo_viaje_fin` (UTC datetime or `None` for indefinite), and `modo_viaje_activado_por` directly onto the `Pacientes` document. The helper `_auto_expirar_modo_viaje(paciente)` checks whether `modo_viaje_fin` has passed and clears the fields if so; call it before acting on `modo_viaje_activo` when freshness matters. While mode is active, `service_alerta.py` should suppress zone-exit alerts (check `modo_viaje_activo` before firing). Router is `/modo-viaje`; both cuidador and familiar endpoints share the same service functions.
+
 **MQTT flow:** ESP32 publishes JSON `{"lat": float, "lng": float}` to `ubilife/dispositivo/<id>/gps` → `MQTT/subscriber.py` parses the payload → if device not in `Dispositivos`, upserts to `DispositivosDisponibles` (field: `dispositivo_detectado` timestamp) and returns → otherwise saves to `Historial` → evaluates geofences via `service_alerta.evaluar_zonas_seguras` → if outside zone, fires Expo Push notification and records in `Alertas` → publishes SSE event to `bus_eventos` (in `utils/eventos.py`).
 
 **Auth:** JWT issued on `/cuidadores/verificar` and `/familiares/verificar`. Revoked tokens are stored in `TokensRevocados` with a MongoDB TTL index (set at startup) so they auto-expire. JWT payload fields: `email` and `jti`. Two auth dependencies in `security/dependencies.py`:
@@ -120,7 +124,7 @@ Wrong field names have caused multiple bugs — use these exactly:
 
 **ZonasSeguras:** `centro: {latitud, longitud}`, `radio_metros` (not `radio`), `activa: bool` (not `estado: "activa"`), `paciente_id: str`
 
-**Pacientes:** `nombre_paciente` (not `nombre`), `fuera_de_zona: bool`, `ultima_alerta_timestamp`
+**Pacientes:** `nombre_paciente` (not `nombre`), `edad_paciente`, `cedula`, `eps`, `enfermedad`, `familiar_nombre`, `familiar_telefono`, `fuera_de_zona: bool`, `ultima_alerta_timestamp`, `id_paciente` (response alias for `_id`). Modo viaje fields: `modo_viaje_activo: bool`, `modo_viaje_tipo`, `modo_viaje_inicio`, `modo_viaje_fin`, `modo_viaje_activado_por`.
 
 **Grupos:** `cuidador_ids: [str]` (not `cuidador_id`), `paciente_ids: [str]` (not `paciente_id`), `familiar_ids: [str]`, `codigo: str` (for joining)
 
@@ -169,12 +173,12 @@ Uses **Expo Router** (file-based routing):
 
 - `app/_layout.tsx` — Root layout; wraps everything in `AuthProvider` and `AuthGuard` (redirects unauthenticated users to `/login`). Also sets up push notification listeners via `configurarListeners`.
 - `app/(app)/_layout.tsx` — Drawer navigation for protected routes
-- `app/(app)/` — Protected drawer screens: `index` (map + live location), `alertas`, `zonas-seguras`, `historial-ubicaciones`, `grupo-familiar`, `registro-paciente`, `vincular-dispositivo`, `perfil`
+- `app/(app)/` — Protected drawer screens: `index` (map + live location), `alertas`, `zonas-seguras`, `historial-ubicaciones`, `grupo-familiar`, `pacientes` (patient list + edit, cuidador-only edit actions), `registro-paciente`, `vincular-dispositivo`, `perfil`
 - Public routes: `login.tsx`, `register.tsx`, `register-cuidador.tsx`, `register-familiar.tsx`, `elegir-rol.tsx`
 
 **State:** `context/AuthContext.tsx` holds `token`, `cuidador`, and `tipoUsuario` (`'cuidador' | 'familiar'`), persisted in `AsyncStorage`. On every cold start `init()` validates the stored token against the backend (`/cuidadores/perfil` or `/familiares/grupos`); if the request fails the token is cleared and the user is sent to login. The axios instance in `services/api.ts` registers a `_logoutHandler` that auto-calls `logout()` on any 401 response.
 
-**API calls:** `services/api.ts` — a single `axios` instance with a request interceptor that attaches the Bearer token. Domain-grouped exports: `cuidadorService`, `familiarService`, `pacienteService`, `zonaService`, `alertaService`, `dispositivoService`, `grupoService`.
+**API calls:** `services/api.ts` — a single `axios` instance with a request interceptor that attaches the Bearer token. Domain-grouped exports: `cuidadorService`, `familiarService`, `pacienteService`, `zonaService`, `alertaService`, `dispositivoService`, `grupoService`, `modoViajeService`. `familiarService.misPacientes()` calls `GET /familiares/pacientes` (the patient list for familiares); `pacienteService.listar()` is the cuidador equivalent.
 
 **Higher-level service helpers:** `services/pacientes.tsx` wraps `pacienteService` with typed `Paciente` interfaces and error-safe functions (`listarPacientes`, `obtenerPaciente`, `tienePacientes`, etc.). Use these in screens instead of calling `pacienteService` directly when you need typed results.
 
@@ -194,6 +198,10 @@ Uses **Expo Router** (file-based routing):
 | `historial-ubicaciones` | `GET /historial-ubicaciones/ruta/{id}` | `GET /historial-ubicaciones/ruta-familiar/{id}` |
 | `alertas` | `GET /alertas/` | `GET /alertas/familiar/` |
 | `zonas-seguras` | `GET /zonas-seguras/paciente/{id}` | `GET /zonas-seguras/familiar/` |
+| `pacientes` | `GET /pacientes/` | `GET /familiares/pacientes` |
+| modo viaje activate | `POST /modo-viaje/activar` | `POST /modo-viaje/familiar/activar` |
+| modo viaje deactivate | `POST /modo-viaje/desactivar/{id}` | `POST /modo-viaje/familiar/desactivar/{id}` |
+| modo viaje status | `GET /modo-viaje/{id}` | `GET /modo-viaje/familiar/{id}` |
 
 ---
 

@@ -3,7 +3,8 @@ import EventSource from 'react-native-sse';
 import * as SecureStore from 'expo-secure-store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const MAX_REINTENTOS = 5;
+const DELAY_BASE_MS = 5000;
+const DELAY_MAX_MS  = 60000;
 
 interface UbicacionPaciente {
   latitude: number;
@@ -24,7 +25,7 @@ export const useSSEUbicacion = (pacienteId: string | null) => {
     intentosRef.current = 0;
 
     const conectar = async (): Promise<void> => {
-      if (cancelado || intentosRef.current >= MAX_REINTENTOS) return;
+      if (cancelado) return;
 
       esRef.current?.close();
 
@@ -61,9 +62,8 @@ export const useSSEUbicacion = (pacienteId: string | null) => {
         setConectado(false);
         esRef.current?.close();
         intentosRef.current += 1;
-        if (intentosRef.current < MAX_REINTENTOS) {
-          setTimeout(conectar, 5000);
-        }
+        const delay = Math.min(DELAY_BASE_MS * intentosRef.current, DELAY_MAX_MS);
+        setTimeout(conectar, delay);
       });
 
       esRef.current = es;

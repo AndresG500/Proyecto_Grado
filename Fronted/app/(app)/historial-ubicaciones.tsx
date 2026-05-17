@@ -15,11 +15,12 @@ interface Ubicacion {
   timestamp: string
 }
 
-function buildHistorialHtml(puntos: { latitude: number; longitude: number }[]): string {
+function buildHistorialHtml(puntos: { latitude: number; longitude: number }[], nombrePaciente: string = 'Paciente'): string {
   const centro = puntos.length > 0
     ? puntos[puntos.length - 1]
     : { latitude: 11.2404, longitude: -74.211 }
   const zoom = puntos.length > 0 ? 15 : 13
+  const nombreJs = nombrePaciente.replace(/'/g, "\\'")
 
   const coordsJs = (() => {
     if (puntos.length === 0) return ''
@@ -34,7 +35,7 @@ function buildHistorialHtml(puntos: { latitude: number; longitude: number }[]): 
       lines.push(`L.circleMarker([${first.latitude}, ${first.longitude}], { radius: 7, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 1 }).addTo(map);`)
     }
     const last = puntos[puntos.length - 1]
-    lines.push(`L.circleMarker([${last.latitude}, ${last.longitude}], { radius: 9, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);`)
+    lines.push(`L.marker([${last.latitude}, ${last.longitude}], { icon: crearIconoPaciente('${nombreJs}') }).addTo(map);`)
     return lines.join('\n    ')
   })()
 
@@ -52,15 +53,30 @@ function buildHistorialHtml(puntos: { latitude: number; longitude: number }[]): 
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; }
     #map { height: 100vh; width: 100%; }
+    .leaflet-control-attribution { display: none !important; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map', { zoomControl: true }).setView([${centro.latitude}, ${centro.longitude}], ${zoom});
+    var map = L.map('map', { zoomControl: false }).setView([${centro.latitude}, ${centro.longitude}], ${zoom});
     L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
       maxZoom: 19, attribution: ''
     }).addTo(map);
+
+    function crearIconoPaciente(nombre) {
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:center;">' +
+          '<div style="width:36px;height:36px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white">' +
+              '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
+            '</svg>' +
+          '</div>' +
+          '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#102e50;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + nombre + '</div>' +
+        '</div>';
+      return L.divIcon({ html: html, className: '', iconSize: [90, 58], iconAnchor: [45, 18] });
+    }
+
     ${coordsJs}
   </script>
 </body>
@@ -113,6 +129,7 @@ export default function HistorialUbicacionesScreen() {
     if (selectedPaciente) cargarRuta(selectedPaciente)
   }, [selectedPaciente, cargarRuta])
 
+  const pacSeleccionado = pacientes.find(p => (p.id_paciente ?? p.id) === selectedPaciente)
   const routeCoordinates = ubicaciones
     .slice(0, 100)
     .map(u => ({ latitude: u.coordenadas.latitud, longitude: u.coordenadas.longitud }))
@@ -128,7 +145,7 @@ export default function HistorialUbicacionesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
@@ -166,7 +183,7 @@ export default function HistorialUbicacionesScreen() {
 
       <View style={styles.mapContainer}>
         <WebView
-          source={{ html: buildHistorialHtml(routeCoordinates) }}
+          source={{ html: buildHistorialHtml(routeCoordinates, pacSeleccionado?.nombre_paciente ?? 'Paciente') }}
           style={styles.map}
           javaScriptEnabled
           originWhitelist={['*']}
@@ -222,10 +239,11 @@ export default function HistorialUbicacionesScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.primary },
+  root: { flex: 1, backgroundColor: '#102e50' },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, gap: 14,
+    backgroundColor: '#102e50',
   },
   backBtn:     { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: Colors.white },
@@ -244,7 +262,13 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 20, left: 16, right: 16,
     backgroundColor: Colors.white,
     borderRadius: 18, paddingHorizontal: 18, paddingVertical: 14,
-    elevation: 6, gap: 5,
+    elevation: 10, gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   infoRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
   infoNombre:     { fontSize: 15, fontWeight: '700', color: Colors.text, flex: 1 },

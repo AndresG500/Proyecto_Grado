@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator, Alert, Dimensions,
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import WebView from 'react-native-webview'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import * as Location from 'expo-location'
 import { Colors } from '@/constants/Colors'
 import { zonaService, pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
@@ -27,12 +28,13 @@ const ZONA_MAP_HTML = `<!DOCTYPE html>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; }
     #map { height: 100vh; width: 100%; }
+    .leaflet-control-attribution { display: none !important; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map', { zoomControl: true }).setView([11.2404, -74.2110], 14);
+    var map = L.map('map', { zoomControl: false }).setView([11.2404, -74.2110], 14);
     L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
       maxZoom: 19, attribution: ''
     }).addTo(map);
@@ -42,11 +44,33 @@ const ZONA_MAP_HTML = `<!DOCTYPE html>
     var radioActual = 150;
 
     var shieldIcon = L.divIcon({
-      html: '<div style="background:#2563eb;width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35);color:white;font-size:18px;">&#10003;</div>',
+      html: '<div style="background:#2563eb;width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>',
       className: '',
       iconSize: [32, 32],
       iconAnchor: [16, 16],
     });
+
+    var markerCuidador = null;
+    var markerPaciente = null;
+
+    var iconCuidador = L.divIcon({
+      html: '<div style="background:#16a34a;width:30px;height:30px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3)"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>',
+      className: '', iconSize: [30, 30], iconAnchor: [15, 15],
+    });
+    var iconPaciente = L.divIcon({
+      html: '<div style="background:#dc2626;width:30px;height:30px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3)"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>',
+      className: '', iconSize: [30, 30], iconAnchor: [15, 15],
+    });
+
+    function mostrarCuidador(lat, lng) {
+      if (markerCuidador) markerCuidador.setLatLng([lat, lng]);
+      else markerCuidador = L.marker([lat, lng], { icon: iconCuidador }).addTo(map);
+    }
+    function mostrarPaciente(lat, lng) {
+      if (markerPaciente) markerPaciente.setLatLng([lat, lng]);
+      else markerPaciente = L.marker([lat, lng], { icon: iconPaciente }).addTo(map);
+      map.setView([lat, lng], 16);
+    }
 
     map.on('click', function(e) {
       var lat = e.latlng.lat;
@@ -100,6 +124,53 @@ export default function ZonasSeguras() {
   const [guardando, setGuardando] = useState(false)
   const [toggling,  setToggling]  = useState<string | null>(null)
 
+  const mapaListoRef    = useRef(false)
+  const pendingUbicRef  = useRef<{ c?: [number, number]; p?: [number, number] }>({})
+
+  const inyectarUbicaciones = useCallback(() => {
+    if (!mapaListoRef.current) return
+    const { c, p } = pendingUbicRef.current
+    if (p) mapRef.current?.injectJavaScript(`mostrarPaciente(${p[0]}, ${p[1]}); true;`)
+    if (c) mapRef.current?.injectJavaScript(`mostrarCuidador(${c[0]}, ${c[1]}); true;`)
+  }, [])
+
+  useEffect(() => {
+    if (!creando) {
+      mapaListoRef.current   = false
+      pendingUbicRef.current = {}
+      return
+    }
+
+    const cargarUbicIniciales = async () => {
+      // Ubicación actual del cuidador
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status === 'granted') {
+          const pos = (await Location.getLastKnownPositionAsync()) ??
+            (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }))
+          if (pos) {
+            pendingUbicRef.current.c = [pos.coords.latitude, pos.coords.longitude]
+            inyectarUbicaciones()
+          }
+        }
+      } catch {}
+
+      // Última ubicación del paciente
+      if (pacSelId) {
+        try {
+          const res   = await pacienteService.ultimaUbicacion(pacSelId)
+          const coord = res.data?.coordenadas
+          if (coord?.latitud != null && coord?.longitud != null) {
+            pendingUbicRef.current.p = [coord.latitud, coord.longitud]
+            inyectarUbicaciones()
+          }
+        } catch {}
+      }
+    }
+
+    cargarUbicIniciales()
+  }, [creando, pacSelId, inyectarUbicaciones])
+
   const cargar = async () => {
     try {
       if (esFamiliar) {
@@ -144,8 +215,8 @@ export default function ZonasSeguras() {
     if (!nombre.trim()) { Alert.alert('Falta el nombre', 'Escribe un nombre para la zona.'); return }
     if (!centro)        { Alert.alert('Falta el centro', 'Toca el mapa para elegir el centro de la zona.'); return }
     const radioNum = parseInt(radio)
-    if (isNaN(radioNum) || radioNum < 50 || radioNum > 500) {
-      Alert.alert('Radio inválido', 'El radio debe estar entre 50 y 500 metros.'); return
+    if (isNaN(radioNum) || radioNum < 10 || radioNum > 500) {
+      Alert.alert('Radio inválido', 'El radio debe estar entre 10 y 500 metros.'); return
     }
     setGuardando(true)
     try {
@@ -194,6 +265,10 @@ export default function ZonasSeguras() {
           source={{ html: ZONA_MAP_HTML }}
           javaScriptEnabled
           originWhitelist={['*']}
+          onLoadEnd={() => {
+            mapaListoRef.current = true
+            inyectarUbicaciones()
+          }}
           onMessage={(e) => {
             try {
               const { lat, lng } = JSON.parse(e.nativeEvent.data)
@@ -281,7 +356,7 @@ export default function ZonasSeguras() {
 
   // ── Vista de lista ─────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
@@ -297,7 +372,7 @@ export default function ZonasSeguras() {
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primaryLight} /></View>
       ) : (
-        <ScrollView style={{ flex: 1, backgroundColor: Colors.background }} contentContainerStyle={styles.list}>
+        <ScrollView style={{ flex: 1, backgroundColor: '#f7fbfc' }} contentContainerStyle={styles.list}>
           {zonas.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="shield-outline" size={56} color={Colors.primaryLight} />
@@ -347,8 +422,8 @@ export default function ZonasSeguras() {
 }
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: Colors.primary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20, gap: 14 },
+  root:   { flex: 1, backgroundColor: '#102e50' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20, gap: 14, backgroundColor: '#102e50' },
   backBtn:     { padding: 4 },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: Colors.white },
   addBtn:      { padding: 4 },
@@ -386,7 +461,7 @@ const styles = StyleSheet.create({
   panelBtns:  { flexDirection: 'row', gap: 12, marginTop: 4 },
   cancelBtn:  { flex: 1, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   cancelText: { fontSize: 15, color: Colors.textSecondary, fontWeight: '600' },
-  crearBtn:   { flex: 1, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  crearBtn:   { flex: 1, backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   crearBtnDisabled: { opacity: 0.45 },
   crearText:  { color: Colors.white, fontWeight: '700', fontSize: 15 },
 })

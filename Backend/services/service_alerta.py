@@ -9,7 +9,9 @@ from database.database import get_database
 
 logger = logging.getLogger(__name__)
 
-COOLDOWN_ALERTA_SEGUNDOS = 300  # 5 minutos
+COOLDOWN_ALERTA_SEGUNDOS   = 300   # 5 minutos entre alertas de zona
+COOLDOWN_VELOCIDAD_SEGUNDOS = 120   # 2 minutos entre notificaciones de anomalía
+VELOCIDAD_ANOMALIA_KMH      = 50.0  # umbral km/h
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -131,6 +133,117 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# DETECCIÓN DE ANOMALÍA DE VELOCIDAD
+# ─────────────────────────────────────────────────────────────────────
+
+async def detectar_anomalia_velocidad(paciente: dict, lat: float, lng: float) -> None:
+    db = get_database()
+    paciente_id_str = str(paciente["_id"])
+    ahora = datetime.now(timezone.utc)
+
+    # Cooldown de 2 minutos entre notificaciones de velocidad
+    ultima_alerta_vel = paciente.get("ultima_alerta_velocidad_timestamp")
+    if ultima_alerta_vel is not None:
+        if ultima_alerta_vel.tzinfo is None:
+            ultima_alerta_vel = ultima_alerta_vel.replace(tzinfo=timezone.utc)
+        if (ahora - ultima_alerta_vel).total_seconds() < COOLDOWN_VELOCIDAD_SEGUNDOS:
+            return
+
+    # Obtener los 2 últimos puntos del historial para calcular velocidad
+    puntos = await db["Historial"].find(
+        {"paciente_id": paciente_id_str}
+    ).sort("timestamp", -1).limit(2).to_list(length=2)
+
+    if len(puntos) < 2:
+        return
+
+    punto_anterior = puntos[1]
+    prev_lat = punto_anterior["coordenadas"]["latitud"]
+    prev_lng = punto_anterior["coordenadas"]["longitud"]
+    prev_ts  = punto_anterior["timestamp"]
+
+    if prev_ts.tzinfo is None:
+        prev_ts = prev_ts.replace(tzinfo=timezone.utc)
+
+    curr_ts = puntos[0].get("timestamp", ahora)
+    if curr_ts.tzinfo is None:
+        curr_ts = curr_ts.replace(tzinfo=timezone.utc)
+
+    tiempo_s = (curr_ts - prev_ts).total_seconds()
+    if tiempo_s <= 0:
+        return
+
+    distancia_m  = distancia_metros(prev_lat, prev_lng, lat, lng)
+    velocidad_kmh = (distancia_m / 1000.0) / (tiempo_s / 3600.0)
+
+    if velocidad_kmh < VELOCIDAD_ANOMALIA_KMH:
+        return
+
+    logger.info(
+        "Anomalía velocidad | paciente=%s velocidad=%.1f km/h",
+        paciente_id_str, velocidad_kmh,
+    )
+
+    await crear_y_despachar_alerta(
+        paciente=paciente,
+        zona_mas_cercana=None,
+        lat=lat,
+        lng=lng,
+        tipo="anomalia_velocidad",
+        distancia=0.0,
+    )
+
+    try:
+        await db["Pacientes"].update_one(
+            {"_id": ObjectId(paciente_id_str)},
+            {"$set": {"ultima_alerta_velocidad_timestamp": ahora}},
+        )
+    except Exception:
+        await db["Pacientes"].update_one(
+            {"_id": paciente_id_str},
+            {"$set": {"ultima_alerta_velocidad_timestamp": ahora}},
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# ORQUESTADOR PRINCIPAL (llamado desde MQTT subscriber)
+# ─────────────────────────────────────────────────────────────────────
+
+async def procesar_ubicacion_paciente(paciente_id: str, lat: float, lng: float) -> None:
+    from services.service_modo_viaje import _auto_expirar_modo_viaje
+
+    db = get_database()
+    try:
+        paciente = await db["Pacientes"].find_one({"_id": ObjectId(paciente_id)})
+    except Exception:
+        paciente = await db["Pacientes"].find_one({"_id": paciente_id})
+
+    if not paciente:
+        logger.warning("Paciente %s no encontrado en procesar_ubicacion_paciente", paciente_id)
+        return
+
+    # Verificar y expirar modo viaje si corresponde
+    modo_activo = await _auto_expirar_modo_viaje(paciente)
+
+    if not modo_activo:
+        # Sin modo viaje → evaluación normal de zonas + anomalía de velocidad
+        await evaluar_zonas_seguras(paciente_id, lat, lng)
+        await detectar_anomalia_velocidad(paciente, lat, lng)
+        return
+
+    tipo_viaje = paciente.get("modo_viaje_tipo")
+
+    if tipo_viaje == "vehiculo":
+        # Modo vehículo → suprimir todo (velocidad alta es esperada)
+        logger.info("Modo viaje vehículo activo | paciente=%s — alertas suprimidas", paciente_id)
+        return
+
+    # Modo caminata → suprimir alertas de zona, pero detectar anomalía de velocidad
+    logger.info("Modo viaje caminata activo | paciente=%s — verificando velocidad", paciente_id)
+    await detectar_anomalia_velocidad(paciente, lat, lng)
+
+
+# ─────────────────────────────────────────────────────────────────────
 # CREACIÓN Y DESPACHO DE ALERTAS
 # ─────────────────────────────────────────────────────────────────────
 
@@ -160,6 +273,9 @@ async def crear_y_despachar_alerta(
     if tipo == "salida_zona_segura":
         titulo = "⚠️ Alerta UbiLife"
         cuerpo = f"{nombre_paciente} ha salido de su zona segura"
+    elif tipo == "anomalia_velocidad":
+        titulo = f"⚠️ Movimiento inusual — {nombre_paciente}"
+        cuerpo = f"{nombre_paciente} se mueve a alta velocidad sin modo viaje activo. ¿Está con usted?"
     else:
         titulo = f"⚠️ {nombre_paciente} sigue fuera de zona"
         cuerpo = f"Está a aproximadamente {int(distancia)} metros de la zona más cercana"

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, ScrollView,
+  ImageBackground,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -66,8 +67,9 @@ export default function RegisterCuidadorScreen() {
 
   if (success) {
     return (
-      <SafeAreaView style={styles.root}>
-        <View style={styles.bgTop} />
+      <ImageBackground source={require('@/assets/images/map-bg.jpg')} style={styles.root} resizeMode="cover" blurRadius={0.5}>
+        <View style={styles.overlay} />
+        <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.successWrap}>
           <View style={styles.successIcon}>
             <Ionicons name="checkmark" size={52} color={Colors.white} />
@@ -84,14 +86,15 @@ export default function RegisterCuidadorScreen() {
             <Text style={styles.successBtnText}>Iniciar sesión</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </ImageBackground>
     )
   }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.bgTop} />
-
+    <ImageBackground source={require('@/assets/images/map-bg.jpg')} style={styles.root} resizeMode="cover" blurRadius={0.5}>
+      <View style={styles.overlay} />
+      <SafeAreaView style={{ flex: 1 }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.kav}
@@ -228,19 +231,14 @@ export default function RegisterCuidadorScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   )
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-  },
-  bgTop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.primary,
-  },
+  root:    { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20, 50, 160, 0.78)' },
   kav: { flex: 1 },
   scroll: {
     flexGrow: 1,
@@ -343,12 +341,12 @@ const styles = StyleSheet.create({
   },
 
   btn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#102e50',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: Colors.primaryDark,
+    shadowColor: '#102e50',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -371,7 +369,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   loginHighlight: {
-    color: Colors.primary,
+    color: '#102e50',
     fontWeight: '700',
   },
 

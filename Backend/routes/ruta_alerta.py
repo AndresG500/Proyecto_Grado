@@ -9,7 +9,7 @@ router = APIRouter(prefix="/alertas", tags=["alertas"])
 
 def _serializar(alerta: dict) -> dict:
     """Convierte ObjectIds a str para que Pydantic pueda serializar."""
-    alerta["_id"]       = str(alerta["_id"])
+    alerta["id"]        = str(alerta.pop("_id"))
     alerta["paciente_id"] = str(alerta["paciente_id"])
     if alerta.get("zonasegura_id"):
         alerta["zonasegura_id"] = str(alerta["zonasegura_id"])
