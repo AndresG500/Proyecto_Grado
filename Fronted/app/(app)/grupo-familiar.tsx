@@ -333,7 +333,11 @@ export default function GrupoFamiliarScreen() {
                       <Text style={[styles.seccionLabel, { color: '#9333ea' }]}>FAMILIARES</Text>
                     </View>
                     {miembros.familiares.map((f) => (
-                      <FamiliarCard key={f.id} fam={f} esMismo={f.id === cuidador?.id} />
+                      <FamiliarCard
+                        key={f.id}
+                        fam={f}
+                        esMismo={f.id === cuidador?.id || f.email === cuidador?.email}
+                      />
                     ))}
                   </View>
                 )}

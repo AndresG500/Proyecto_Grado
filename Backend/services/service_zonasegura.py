@@ -5,6 +5,7 @@ from database.database import get_database
 from models.model_zonasegura import CrearZonaSegura, ActualizarZonaSegura
 from bson import ObjectId
 from utils.Logger import Logger
+from utils.sanitizer import sanitize_string
 
 
 def verificar_si_dentro(latitud_paciente: float, longitud_paciente: float,
@@ -67,7 +68,7 @@ async def crear_zona_segura(datos: CrearZonaSegura):
         await coleccion.insert_one({
             "paciente_id": datos.paciente_id,
             "cuidador_id": datos.cuidador_id,
-            "nombre": datos.nombre,
+            "nombre": sanitize_string(datos.nombre, 100),
             "centro": datos.centro.model_dump(),
             "radio_metros": datos.radio_metros,
             "activa": datos.activa,
@@ -143,7 +144,7 @@ async def actualizar_zona_segura(zona_id: str, datos: ActualizarZonaSegura, cuid
 
         campos = {}
         if datos.nombre is not None:
-            campos["nombre"] = datos.nombre
+            campos["nombre"] = sanitize_string(datos.nombre, 100)
         if datos.centro is not None:
             campos["centro"] = datos.centro.model_dump()
         if datos.radio_metros is not None:

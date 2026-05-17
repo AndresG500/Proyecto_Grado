@@ -35,8 +35,9 @@ const ZONA_MAP_HTML = `<!DOCTYPE html>
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false }).setView([11.2404, -74.2110], 14);
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
-      maxZoom: 19, attribution: ''
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      subdomains: 'abc',
     }).addTo(map);
 
     var marcador = null;
@@ -234,7 +235,7 @@ export default function ZonasSeguras() {
       { text: 'Eliminar', style: 'destructive', onPress: async () => {
           try {
             await zonaService.eliminar(id)
-            setZonas((z) => z.filter((x) => x.id !== id))
+            await cargar()
           } catch (err: any) {
             Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo eliminar la zona.')
           }

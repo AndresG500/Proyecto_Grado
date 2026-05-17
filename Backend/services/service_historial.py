@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database.database import get_database
 from models.model_historial import HistorialUbicacionBase
 from bson import ObjectId
@@ -106,7 +106,7 @@ async def obtener_historial_ubicaciones(paciente_id: str, cuidador_email: str) -
     try:
         db = get_database()
         coleccion = db["Historial"]
-        corte = datetime.utcnow() - timedelta(days=DIAS_HISTORIAL)
+        corte = datetime.now(timezone.utc) - timedelta(days=DIAS_HISTORIAL)
 
         cursor = coleccion.find(
             {"paciente_id": paciente_id, "timestamp": {"$gte": corte}},
@@ -150,7 +150,7 @@ async def obtener_historial_ubicaciones_familiar(paciente_id: str, familiar_id: 
     try:
         db = get_database()
         coleccion = db["Historial"]
-        corte = datetime.utcnow() - timedelta(days=DIAS_HISTORIAL)
+        corte = datetime.now(timezone.utc) - timedelta(days=DIAS_HISTORIAL)
 
         cursor = coleccion.find(
             {"paciente_id": paciente_id, "timestamp": {"$gte": corte}},

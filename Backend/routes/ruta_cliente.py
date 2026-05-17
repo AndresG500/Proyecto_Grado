@@ -4,6 +4,7 @@ from services.service_cuidador import registrar_cuidador, borrar_cuidador, actua
 from services.service_auth import revocar_token
 from security.dependencies import get_cuidador_actual, oauth2_scheme
 from security.jwt_handler import verificar_token
+from database.database import get_database
 from pydantic import BaseModel, Field
 router = APIRouter(prefix="/cuidadores", tags=["Cuidadores"])
 
@@ -55,6 +56,8 @@ async def logout(
     datos = verificar_token(token)
     if datos:
         await revocar_token(datos.get("jti"), datos.get("exp"))
+    db = get_database()
+    await db["UbicacionesCuidadores"].delete_many({"cuidador_id": str(cuidador_actual["_id"])})
     return {"mensaje": "Sesión cerrada exitosamente"}
 
 @router.patch("/fcm-token")

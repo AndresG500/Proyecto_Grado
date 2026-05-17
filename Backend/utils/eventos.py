@@ -2,6 +2,9 @@ import asyncio
 from collections import defaultdict
 from typing import Dict, List
 
+SSE_QUEUE_MAXSIZE = 50
+
+
 class EventBus:
     def __init__(self):
         self._suscriptores: Dict[str, List[asyncio.Queue]] = defaultdict(list)
@@ -15,6 +18,9 @@ class EventBus:
 
     async def publicar(self, topic: str, datos: dict):
         for cola in list(self._suscriptores[topic]):
-            await cola.put(datos)
+            try:
+                cola.put_nowait(datos)
+            except asyncio.QueueFull:
+                pass  # cliente lento o desconectado — evento descartado
 
 bus_eventos = EventBus()

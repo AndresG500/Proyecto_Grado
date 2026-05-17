@@ -77,6 +77,10 @@ async def verificar_familiar(email: str, password: str):
             Logger.add_to_log("warn", f"Verificación familiar fallida: {email}")
             return {"mensaje": "Credenciales inválidas"}
 
+        if not familiar.get("activo", True):
+            Logger.add_to_log("warn", f"Familiar inactivo intentó iniciar sesión: {email}")
+            return {"mensaje": "Credenciales inválidas"}
+
         token = crear_token({"sub": familiar["email"]})
 
         Logger.add_to_log("info", f"Familiar verificado: {email}")

@@ -94,11 +94,11 @@ Each domain follows a three-layer pattern:
 
 **Naming mismatch:** `routes/ruta_cliente.py` handles the `/cuidadores` prefix — the filename uses "cliente" but the domain, collection, and prefix are all "cuidador". Do not create a separate `ruta_cuidador.py`.
 
-**MongoDB collections:** `Cuidadores`, `Familiares`, `Pacientes`, `Dispositivos`, `DispositivosDisponibles`, `ZonasSeguras`, `Grupos`, `Alertas`, `Historial`, `TokensRevocados`
+**MongoDB collections:** `Cuidadores`, `Familiares`, `Pacientes`, `Dispositivos`, `DispositivosDisponibles`, `ZonasSeguras`, `Grupos`, `Alertas`, `Historial`, `TokensRevocados`, `UbicacionesCuidadores` (TTL 900 s — auto-expires cuidador positions after 15 min of no update), `UbicacionesFamiliares` (stores familiar real-time positions, no TTL index)
 
 **Modo Viaje:** When a cuidador or familiar activates travel mode, `service_modo_viaje.py` writes `modo_viaje_activo`, `modo_viaje_tipo` (`"caminata"` or `"vehiculo"`), `modo_viaje_inicio`, `modo_viaje_fin` (UTC datetime or `None` for indefinite), and `modo_viaje_activado_por` directly onto the `Pacientes` document. The helper `_auto_expirar_modo_viaje(paciente)` checks whether `modo_viaje_fin` has passed and clears the fields if so; call it before acting on `modo_viaje_activo` when freshness matters. While mode is active, `service_alerta.py` should suppress zone-exit alerts (check `modo_viaje_activo` before firing). Router is `/modo-viaje`; both cuidador and familiar endpoints share the same service functions.
 
-**MQTT flow:** ESP32 publishes JSON `{"lat": float, "lng": float}` to `ubilife/dispositivo/<id>/gps` → `MQTT/subscriber.py` parses the payload → if device not in `Dispositivos`, upserts to `DispositivosDisponibles` (field: `dispositivo_detectado` timestamp) and returns → otherwise saves to `Historial` → evaluates geofences via `service_alerta.evaluar_zonas_seguras` → if outside zone, fires Expo Push notification and records in `Alertas` → publishes SSE event to `bus_eventos` (in `utils/eventos.py`).
+**MQTT flow:** ESP32 publishes JSON `{"lat": float, "lng": float}` to `ubilife/dispositivo/<id>/gps` → `MQTT/subscriber.py` parses the payload → if device not in `Dispositivos`, upserts to `DispositivosDisponibles` (field: `dispositivo_detectado` timestamp) and returns → otherwise updates `ultima_conexion` on `Dispositivos`, saves to `Historial` → calls `procesar_ubicacion_paciente` (the real orchestrator in `service_alerta.py`) → publishes SSE event to `bus_eventos` (in `utils/eventos.py`). `procesar_ubicacion_paciente` checks travel mode first: no mode → `evaluar_zonas_seguras` + `detectar_anomalia_velocidad`; `"vehiculo"` → suppresses all alerts; `"caminata"` → skips zone check but still runs `detectar_anomalia_velocidad`.
 
 **Auth:** JWT issued on `/cuidadores/verificar` and `/familiares/verificar`. Revoked tokens are stored in `TokensRevocados` with a MongoDB TTL index (set at startup) so they auto-expire. JWT payload fields: `email` and `jti`. Two auth dependencies in `security/dependencies.py`:
 - `get_cuidador_actual` — for cuidador-only routes
@@ -124,11 +124,11 @@ Wrong field names have caused multiple bugs — use these exactly:
 
 **ZonasSeguras:** `centro: {latitud, longitud}`, `radio_metros` (not `radio`), `activa: bool` (not `estado: "activa"`), `paciente_id: str`
 
-**Pacientes:** `nombre_paciente` (not `nombre`), `edad_paciente`, `cedula`, `eps`, `enfermedad`, `familiar_nombre`, `familiar_telefono`, `fuera_de_zona: bool`, `ultima_alerta_timestamp`, `id_paciente` (response alias for `_id`). Modo viaje fields: `modo_viaje_activo: bool`, `modo_viaje_tipo`, `modo_viaje_inicio`, `modo_viaje_fin`, `modo_viaje_activado_por`.
+**Pacientes:** `nombre_paciente` (not `nombre`), `edad_paciente`, `cedula`, `eps`, `enfermedad`, `familiar_nombre`, `familiar_telefono`, `fuera_de_zona: bool`, `ultima_alerta_timestamp`, `ultima_alerta_velocidad_timestamp`, `id_paciente` (response alias for `_id`). Modo viaje fields: `modo_viaje_activo: bool`, `modo_viaje_tipo`, `modo_viaje_inicio`, `modo_viaje_fin`, `modo_viaje_activado_por`.
 
 **Grupos:** `cuidador_ids: [str]` (not `cuidador_id`), `paciente_ids: [str]` (not `paciente_id`), `familiar_ids: [str]`, `codigo: str` (for joining)
 
-**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`. Alert cooldown: 300 s between repeated push notifications for the same patient (`COOLDOWN_ALERTA_SEGUNDOS`).
+**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`. Two alert types: zone-exit (default) and `"anomalia_velocidad"` (fires when GPS speed exceeds 50 km/h — `VELOCIDAD_ANOMALIA_KMH`). Zone-exit cooldown: 300 s (`COOLDOWN_ALERTA_SEGUNDOS`); velocity anomaly cooldown: 120 s (`COOLDOWN_VELOCIDAD_SEGUNDOS`).
 
 **Dispositivos:** `id_dispositivo` (string identifier from ESP32), `paciente_id`, `ultima_conexion`
 
@@ -182,7 +182,7 @@ Uses **Expo Router** (file-based routing):
 
 **Higher-level service helpers:** `services/pacientes.tsx` wraps `pacienteService` with typed `Paciente` interfaces and error-safe functions (`listarPacientes`, `obtenerPaciente`, `tienePacientes`, etc.). Use these in screens instead of calling `pacienteService` directly when you need typed results.
 
-**Cuidador location tracking:** `services/ubicacion.tsx` — `solicitarPermisos()`, `iniciarSeguimiento(onUbicacion)` (device GPS watch), `enviarUbicacionCuidador(grupoId, lat, lng)` (POST to `/grupos/{id}/ubicacion`), and `obtenerUbicacionesGrupo(grupoId)` (GET `/grupos/{id}/ubicaciones`). Returns `{ cuidadores, pacientes }`. Silently swallows network errors so it doesn't interrupt tracking.
+**Cuidador/familiar location tracking:** `services/ubicacion.tsx` — `solicitarPermisos()`, `iniciarSeguimiento(onUbicacion)` (device GPS watch), `enviarUbicacionCuidador(grupoId, lat, lng)` (POST `/grupos/{id}/ubicacion`), `obtenerUbicacionesGrupo(grupoId)` (GET `/grupos/{id}/ubicaciones`, returns `{ cuidadores, pacientes }`), `enviarUbicacionFamiliar(grupoId, lat, lng)` (POST `/grupos/{id}/ubicacion/familiar`), `obtenerUbicacionesGrupoFamiliar(grupoId)` (GET `/grupos/{id}/ubicaciones/familiar`, returns `{ cuidadores, familiares, pacientes }`). Silently swallows network errors so it doesn't interrupt tracking.
 
 **Real-time location:** `hooks/useSSEUbicacion.ts` — connects to the SSE endpoint using `react-native-sse`, auto-reconnects on error after 5 s. SSE event data uses keys `lat`/`lng` (not `latitud`/`longitud`).
 

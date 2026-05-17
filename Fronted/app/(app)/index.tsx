@@ -17,6 +17,18 @@ import {
   type UbicacionCuidador, type UbicacionFamiliar,
 } from '@/services/ubicacion'
 
+function escaparJs(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+}
+
 function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = [], familiares: UbicacionFamiliar[] = []): string {
   const zonesJs = zonas.map((zona) => {
     const lat   = zona.centro?.latitud  ?? 0
@@ -39,7 +51,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
   const markersJs = pacientes.map((pac) => {
     const id     = pac.id_paciente ?? pac.id
-    const nombre = (pac.nombre_paciente ?? '').replace(/'/g, "\\'")
+    const nombre = escaparJs(pac.nombre_paciente ?? '')
     const ub     = pac.ultima_ubicacion
     if (!ub) return ''
     const lat = ub.latitud  ?? ub.lat  ?? 0
@@ -95,8 +107,9 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.2404, -74.2110], 14);
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
+      subdomains: 'abc',
     }).addTo(map);
 
     var markers = {};
@@ -198,6 +211,22 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
         zoneCircles[id] = L.circle([lat, lng], opts).addTo(map);
       }
     }
+
+    var signalLostCircle = null;
+    function showSignalLostCircle(lat, lng) {
+      if (signalLostCircle) signalLostCircle.remove();
+      signalLostCircle = L.circle([lat, lng], {
+        radius: 75,
+        fillColor: '#f97316',
+        fillOpacity: 0.18,
+        color: '#f97316',
+        weight: 2,
+        dashArray: '6,4',
+      }).addTo(map);
+    }
+    function hideSignalLostCircle() {
+      if (signalLostCircle) { signalLostCircle.remove(); signalLostCircle = null; }
+    }
   </script>
 </body>
 </html>`
@@ -221,7 +250,7 @@ export default function MapScreen() {
   const zonasRef          = useRef<any[]>([])
   const mapaListo         = useRef(false)
 
-  const { ubicacion, conectado } = useSSEUbicacion(tipoUsuario === 'familiar' ? null : selPacId)
+  const { ubicacion, gpsActivo } = useSSEUbicacion(tipoUsuario === 'familiar' ? null : selPacId)
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -356,6 +385,16 @@ export default function MapScreen() {
   }, [ubicacion, selPacId])
 
   useEffect(() => {
+    if (!mapaListo.current) return
+    if (!gpsActivo && ubicacion) {
+      const js = `showSignalLostCircle(${ubicacion.latitude}, ${ubicacion.longitude}); true;`
+      webViewRef.current?.injectJavaScript(js)
+    } else {
+      webViewRef.current?.injectJavaScript('hideSignalLostCircle(); true;')
+    }
+  }, [gpsActivo, ubicacion])
+
+  useEffect(() => {
     if (tipoUsuario === 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
 
@@ -455,7 +494,7 @@ export default function MapScreen() {
           ? <ActivityIndicator size="small" color={online ? Colors.success : Colors.warning} />
           : <View style={[styles.statusDot, !online && styles.statusDotOffline]} />}
         <Text style={[styles.statusText, !online && styles.statusTextOffline]}>
-          {loading ? 'Cargando...' : online ? (conectado ? 'En línea' : 'Sin GPS') : 'Sin conexión'}
+          {loading ? 'Cargando...' : online ? (gpsActivo ? 'GPS en línea' : 'Sin GPS') : 'Sin conexión'}
         </Text>
       </View>
 

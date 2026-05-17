@@ -85,10 +85,11 @@ async def vincular_dispositivo(
     return resultado
 
 
-# --- Endpoint público para ESP32 (sin auth) ---
-
 @router.post("/anunciar")
-async def anunciar_dispositivo(id_dispositivo: str):
+async def anunciar_dispositivo(
+    id_dispositivo: str,
+    cuidador_actual = Depends(get_cuidador_actual),
+):
     resultado = await service_dispositivo.anunciar_dispositivo(id_dispositivo)
     if "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])

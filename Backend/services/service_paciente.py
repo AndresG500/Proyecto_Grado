@@ -3,6 +3,7 @@ from models.model_paciente import CrearPaciente, ActualizarPaciente
 from bson import ObjectId
 from datetime import datetime
 from utils.Logger import Logger
+from utils.sanitizer import sanitize_string
 
 
 async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← recibe email del token
@@ -17,13 +18,13 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
             return {"mensaje": "No se encontró el cuidador especificado"}
 
         resultado = await coleccion.insert_one({
-            "nombre_paciente":    datos.nombre_paciente,
+            "nombre_paciente":    sanitize_string(datos.nombre_paciente, 100),
             "edad_paciente":      datos.edad_paciente,
-            "enfermedad":         datos.enfermedad,
-            "cedula":             datos.cedula,
-            "eps":                datos.eps,
-            "familiar_nombre":    datos.familiar_nombre,
-            "familiar_telefono":  datos.familiar_telefono,
+            "enfermedad":         sanitize_string(datos.enfermedad, 200) if datos.enfermedad else datos.enfermedad,
+            "cedula":             sanitize_string(datos.cedula, 20) if datos.cedula else datos.cedula,
+            "eps":                sanitize_string(datos.eps, 100) if datos.eps else datos.eps,
+            "familiar_nombre":    sanitize_string(datos.familiar_nombre, 100) if datos.familiar_nombre else datos.familiar_nombre,
+            "familiar_telefono":  sanitize_string(datos.familiar_telefono, 20) if datos.familiar_telefono else datos.familiar_telefono,
             "id_cuidador":        str(cuidador["_id"]),
             "id_dispositivo":     datos.id_dispositivo,
             "fuera_de_zona":       False,
@@ -125,19 +126,19 @@ async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente, cuidad
 
         campos = {}
         if datos.nombre_paciente:
-            campos["nombre_paciente"] = datos.nombre_paciente
+            campos["nombre_paciente"] = sanitize_string(datos.nombre_paciente, 100)
         if datos.edad_paciente is not None:
             campos["edad_paciente"] = datos.edad_paciente
         if datos.enfermedad is not None:
-            campos["enfermedad"] = datos.enfermedad
+            campos["enfermedad"] = sanitize_string(datos.enfermedad, 200)
         if datos.cedula is not None:
-            campos["cedula"] = datos.cedula
+            campos["cedula"] = sanitize_string(datos.cedula, 20)
         if datos.eps is not None:
-            campos["eps"] = datos.eps
+            campos["eps"] = sanitize_string(datos.eps, 100)
         if datos.familiar_nombre is not None:
-            campos["familiar_nombre"] = datos.familiar_nombre
+            campos["familiar_nombre"] = sanitize_string(datos.familiar_nombre, 100)
         if datos.familiar_telefono is not None:
-            campos["familiar_telefono"] = datos.familiar_telefono
+            campos["familiar_telefono"] = sanitize_string(datos.familiar_telefono, 20)
         if datos.id_dispositivo:
             campos["id_dispositivo"] = datos.id_dispositivo
 

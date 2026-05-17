@@ -7,7 +7,7 @@ from database.database import get_database
 from models.model_historial import HistorialUbicacionBase, CoordenadasPaciente
 from services.service_historial import registrar_ubicacion
 from utils.Logger import Logger
-from services.service_alerta import procesar_ubicacion_paciente
+from services.service_alerta import procesar_ubicacion_paciente, resolver_alertas_senal_perdida
 from utils.eventos import bus_eventos
 from datetime import datetime, timezone
 
@@ -60,6 +60,13 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
     )
 
     paciente_id = dispositivo.get("paciente_id")
+
+    # Señal recuperada → resolver alertas de señal perdida pendientes
+    if paciente_id:
+        try:
+            await resolver_alertas_senal_perdida(str(paciente_id))
+        except Exception as ex:
+            Logger.add_to_log("warn", f"No se pudo resolver alerta señal perdida: {ex}")
     if not paciente_id:
         Logger.add_to_log("warn", f"Dispositivo {id_dispositivo} sin paciente asignado")
         return

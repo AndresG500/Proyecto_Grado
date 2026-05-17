@@ -22,7 +22,8 @@ def _serializar(alerta: dict) -> dict:
 # BUG CORREGIDO: todos los endpoints ahora requieren JWT
 @router.get("/familiar/")
 async def alertas_familiar(familiar_actual = Depends(get_familiar_actual)):
-    return await listar_alertas_familiar(str(familiar_actual["_id"]))
+    alertas = await listar_alertas_familiar(str(familiar_actual["_id"]))
+    return [_serializar(a) for a in alertas]
 
 
 @router.get("/", response_model=list[RespuestaAlerta])

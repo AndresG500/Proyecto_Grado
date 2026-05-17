@@ -7,6 +7,7 @@ from services.service_familiar import (
 from services.service_auth import revocar_token
 from security.dependencies import get_familiar_actual, oauth2_scheme
 from security.jwt_handler import verificar_token
+from database.database import get_database
 
 router = APIRouter(prefix="/familiares", tags=["Familiares"])
 
@@ -35,6 +36,8 @@ async def logout(
     datos = verificar_token(token)
     if datos:
         await revocar_token(datos.get("jti"), datos.get("exp"))
+    db = get_database()
+    await db["UbicacionesFamiliares"].delete_many({"familiar_id": str(familiar_actual["_id"])})
     return {"mensaje": "Sesión cerrada exitosamente"}
 
 

@@ -15,12 +15,24 @@ interface Ubicacion {
   timestamp: string
 }
 
+function escaparJs(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+}
+
 function buildHistorialHtml(puntos: { latitude: number; longitude: number }[], nombrePaciente: string = 'Paciente'): string {
   const centro = puntos.length > 0
     ? puntos[puntos.length - 1]
     : { latitude: 11.2404, longitude: -74.211 }
   const zoom = puntos.length > 0 ? 15 : 13
-  const nombreJs = nombrePaciente.replace(/'/g, "\\'")
+  const nombreJs = escaparJs(nombrePaciente)
 
   const coordsJs = (() => {
     if (puntos.length === 0) return ''
@@ -60,8 +72,9 @@ function buildHistorialHtml(puntos: { latitude: number; longitude: number }[], n
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false }).setView([${centro.latitude}, ${centro.longitude}], ${zoom});
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
-      maxZoom: 19, attribution: ''
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      subdomains: 'abc',
     }).addTo(map);
 
     function crearIconoPaciente(nombre) {
@@ -114,7 +127,6 @@ export default function HistorialUbicacionesScreen() {
       if (pacs.length > 0) {
         const id = pacs[0].id_paciente ?? pacs[0].id
         setSelectedPaciente(id)
-        await cargarRuta(id)
       }
     } catch (err) {
       console.error('Error cargando datos:', err)

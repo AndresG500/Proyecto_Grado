@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import secrets
 import string
 from database.database import get_database
@@ -60,7 +60,7 @@ async def crear_grupo(datos: CrearGrupo):
             "paciente_ids":          datos.paciente_ids,
             "familiar_ids":          [],
             "codigo":                _generar_codigo(),
-            "created_at":            datetime.utcnow()
+            "created_at":            datetime.now(timezone.utc)
         })
 
         grupo_id = str(resultado.inserted_id)
@@ -250,19 +250,32 @@ async def agregar_paciente(grupo_id: str, paciente_id: str, cuidador_solicitante
 
 async def guardar_ubicacion_cuidador(datos: UbicacionCuidador):
     try:
-        db            = get_database()
-        col_ubicaciones = db["UbicacionesCuidadores"]
+        db  = get_database()
+        now = datetime.now(timezone.utc)
 
-        await col_ubicaciones.update_one(
+        await db["UbicacionesCuidadores"].update_one(
             {"cuidador_id": datos.cuidador_id},
             {"$set": {
                 "cuidador_id": datos.cuidador_id,
                 "latitud":     datos.latitud,
                 "longitud":    datos.longitud,
-                "timestamp":   datetime.utcnow()
+                "timestamp":   now,
             }},
-            upsert=True
+            upsert=True,
         )
+
+        # Persistir última posición en el documento principal (sin TTL) para detección de zona muerta
+        try:
+            await db["Cuidadores"].update_one(
+                {"_id": ObjectId(datos.cuidador_id)},
+                {"$set": {
+                    "ultima_ubicacion_lat": datos.latitud,
+                    "ultima_ubicacion_lng": datos.longitud,
+                    "ultima_ubicacion_ts":  now,
+                }},
+            )
+        except Exception:
+            pass
 
         Logger.add_to_log("info", f"Ubicación de cuidador actualizada: {datos.cuidador_id}")
         return {"mensaje": "Ubicación actualizada exitosamente"}
@@ -453,19 +466,33 @@ async def unirse_a_grupo(familiar_id: str, codigo: str) -> dict:
 
 async def guardar_ubicacion_familiar(datos: UbicacionFamiliar):
     try:
-        db = get_database()
-        col_ubicaciones = db["UbicacionesFamiliares"]
+        db  = get_database()
+        now = datetime.now(timezone.utc)
 
-        await col_ubicaciones.update_one(
+        await db["UbicacionesFamiliares"].update_one(
             {"familiar_id": datos.familiar_id},
             {"$set": {
                 "familiar_id": datos.familiar_id,
                 "latitud":     datos.latitud,
                 "longitud":    datos.longitud,
-                "timestamp":   datetime.utcnow()
+                "timestamp":   now,
             }},
-            upsert=True
+            upsert=True,
         )
+
+        # Persistir última posición en el documento principal (sin TTL) para detección de zona muerta
+        try:
+            await db["Familiares"].update_one(
+                {"_id": ObjectId(datos.familiar_id)},
+                {"$set": {
+                    "ultima_ubicacion_lat": datos.latitud,
+                    "ultima_ubicacion_lng": datos.longitud,
+                    "ultima_ubicacion_ts":  now,
+                }},
+            )
+        except Exception:
+            pass
+
         Logger.add_to_log("info", f"Ubicación de familiar actualizada: {datos.familiar_id}")
         return {"mensaje": "Ubicación actualizada exitosamente"}
 

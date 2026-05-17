@@ -18,7 +18,7 @@ from routes.ruta_grupo import router as grupo_router
 from routes.ruta_alerta import router as alerta_router
 from routes.ruta_familiar import router as familiar_router
 from routes.ruta_modo_viaje import router as modo_viaje_router
-from services.service_alerta import reenviar_alertas_activas
+from services.service_alerta import reenviar_alertas_activas, verificar_senal_perdida
 from utils.Logger import Logger
 
 _sentry_dsn = os.getenv("SENTRY_DSN")
@@ -32,13 +32,32 @@ RATE_WINDOW = 60
 
 
 def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return request.client.host
 
 
 async def tarea_alertas():
     while True:
         await asyncio.sleep(300)  # 5 minutos
-        await reenviar_alertas_activas()
+        try:
+            await reenviar_alertas_activas()
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            Logger.add_to_log("error", f"Excepción en tarea_alertas: {ex}")
+
+
+async def tarea_watchdog_gps():
+    while True:
+        await asyncio.sleep(30)  # cada 30 s
+        try:
+            await verificar_senal_perdida()
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            Logger.add_to_log("error", f"Excepción en tarea_watchdog_gps: {ex}")
 
 
 @asynccontextmanager
@@ -49,14 +68,15 @@ async def lifespan(app: FastAPI):
     # TTL: borra ubicaciones de cuidadores si no se actualizan en 15 min
     await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
 
-    alertas_task = asyncio.create_task(tarea_alertas())
-    mqtt_task = asyncio.create_task(mqtt_subscriber_task())
+    alertas_task  = asyncio.create_task(tarea_alertas())
+    mqtt_task     = asyncio.create_task(mqtt_subscriber_task())
+    watchdog_task = asyncio.create_task(tarea_watchdog_gps())
 
     yield
 
-    for task in (alertas_task, mqtt_task):
+    for task in (alertas_task, mqtt_task, watchdog_task):
         task.cancel()
-    for task in (alertas_task, mqtt_task):
+    for task in (alertas_task, mqtt_task, watchdog_task):
         try:
             await task
         except asyncio.CancelledError:

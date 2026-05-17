@@ -41,7 +41,7 @@ export default function AlertasScreen() {
     setResolviendo(id)
     try {
       await alertaService.resolver(id)
-      setAlertas((prev) => prev.map((a) => a.id === id ? { ...a, estado: 'resuelta' } : a))
+      await cargar()
     } finally {
       setResolviendo(null)
     }

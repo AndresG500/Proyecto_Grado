@@ -9,9 +9,15 @@ from database.database import get_database
 
 logger = logging.getLogger(__name__)
 
-COOLDOWN_ALERTA_SEGUNDOS   = 300   # 5 minutos entre alertas de zona
+COOLDOWN_ALERTA_SEGUNDOS    = 300   # 5 minutos entre alertas de zona
 COOLDOWN_VELOCIDAD_SEGUNDOS = 120   # 2 minutos entre notificaciones de anomalía
 VELOCIDAD_ANOMALIA_KMH      = 50.0  # umbral km/h
+
+UMBRAL_SENAL_PERDIDA_S   = 60    # segundos sin datos → GPS offline
+VENTANA_DISPOSITIVO_S    = 300   # dispositivo debe haber tenido señal en los últimos 5 min
+COOLDOWN_SENAL_PERDIDA_S = 300   # 5 min entre alertas de señal perdida
+RADIO_PROXIMIDAD_METROS  = 150   # radio para considerar que alguien está "cerca"
+VENTANA_ZONA_MUERTA_S    = 180   # ambos perdieron señal en un margen de 3 min → zona muerta
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -136,13 +142,42 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
 # DETECCIÓN DE ANOMALÍA DE VELOCIDAD
 # ─────────────────────────────────────────────────────────────────────
 
+async def _actualizar_flag_zona(paciente_id_str: str, lat: float, lng: float) -> None:
+    """Actualiza fuera_de_zona sin enviar alertas. Se usa durante modo viaje."""
+    db = get_database()
+    zonas = await db["ZonasSeguras"].find({
+        "paciente_id": paciente_id_str,
+        "activa": True,
+    }).to_list(length=None)
+    if not zonas:
+        return
+    dentro = any(
+        distancia_metros(lat, lng, z["centro"]["latitud"], z["centro"]["longitud"]) <= z["radio_metros"]
+        for z in zonas
+    )
+    try:
+        await db["Pacientes"].update_one(
+            {"_id": ObjectId(paciente_id_str)},
+            {"$set": {"fuera_de_zona": not dentro}},
+        )
+    except Exception:
+        await db["Pacientes"].update_one(
+            {"_id": paciente_id_str},
+            {"$set": {"fuera_de_zona": not dentro}},
+        )
+
+
 async def detectar_anomalia_velocidad(paciente: dict, lat: float, lng: float) -> None:
     db = get_database()
     paciente_id_str = str(paciente["_id"])
     ahora = datetime.now(timezone.utc)
 
-    # Cooldown de 2 minutos entre notificaciones de velocidad
-    ultima_alerta_vel = paciente.get("ultima_alerta_velocidad_timestamp")
+    # Recargar desde DB para evitar race condition con mensajes MQTT concurrentes
+    doc_fresco = await db["Pacientes"].find_one(
+        {"_id": paciente["_id"]},
+        {"ultima_alerta_velocidad_timestamp": 1},
+    )
+    ultima_alerta_vel = doc_fresco.get("ultima_alerta_velocidad_timestamp") if doc_fresco else None
     if ultima_alerta_vel is not None:
         if ultima_alerta_vel.tzinfo is None:
             ultima_alerta_vel = ultima_alerta_vel.replace(tzinfo=timezone.utc)
@@ -234,12 +269,14 @@ async def procesar_ubicacion_paciente(paciente_id: str, lat: float, lng: float) 
     tipo_viaje = paciente.get("modo_viaje_tipo")
 
     if tipo_viaje == "vehiculo":
-        # Modo vehículo → suprimir todo (velocidad alta es esperada)
+        # Modo vehículo → suprimir alertas, pero mantener fuera_de_zona actualizado
         logger.info("Modo viaje vehículo activo | paciente=%s — alertas suprimidas", paciente_id)
+        await _actualizar_flag_zona(paciente_id, lat, lng)
         return
 
-    # Modo caminata → suprimir alertas de zona, pero detectar anomalía de velocidad
+    # Modo caminata → suprimir alertas de zona, mantener flag y detectar velocidad
     logger.info("Modo viaje caminata activo | paciente=%s — verificando velocidad", paciente_id)
+    await _actualizar_flag_zona(paciente_id, lat, lng)
     await detectar_anomalia_velocidad(paciente, lat, lng)
 
 
@@ -397,13 +434,6 @@ async def listar_alertas_familiar(familiar_id: str) -> list[dict]:
     alertas = await db["Alertas"].find(
         {"paciente_id": {"$in": paciente_ids}}
     ).sort("timestamp", -1).to_list(length=None)
-    for a in alertas:
-        a["id"] = str(a["_id"])
-        del a["_id"]
-        a["paciente_id"]  = str(a.get("paciente_id", ""))
-        if a.get("zonasegura_id"):
-            a["zonasegura_id"] = str(a["zonasegura_id"])
-        a["cuidadores_notificados"] = [str(c) for c in a.get("cuidadores_notificados", [])]
     return alertas
 
 
@@ -552,3 +582,222 @@ async def reenviar_alertas_activas() -> dict:
     except Exception as ex:
         logger.error("Error en reenviar_alertas_activas: %s", ex)
         return {"error": str(ex)}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# WATCHDOG DE SEÑAL GPS
+# ─────────────────────────────────────────────────────────────────────
+
+async def _alguien_cerca_o_zona_muerta(
+    db, grupos: list, pac_lat: float, pac_lng: float, pac_ts: Optional[datetime]
+) -> bool:
+    cuidador_ids: set[str] = set()
+    familiar_ids: set[str] = set()
+    for g in grupos:
+        cuidador_ids.update(g.get("cuidador_ids", []))
+        familiar_ids.update(g.get("familiar_ids", []))
+
+    for cuid in cuidador_ids:
+        ub = await db["UbicacionesCuidadores"].find_one({"cuidador_id": cuid})
+        if ub:
+            if distancia_metros(pac_lat, pac_lng, ub["latitud"], ub["longitud"]) <= RADIO_PROXIMIDAD_METROS:
+                return True
+        try:
+            c_doc = await db["Cuidadores"].find_one(
+                {"_id": ObjectId(cuid)},
+                {"ultima_ubicacion_lat": 1, "ultima_ubicacion_lng": 1, "ultima_ubicacion_ts": 1},
+            )
+        except Exception:
+            c_doc = None
+        if c_doc and c_doc.get("ultima_ubicacion_ts") and pac_ts:
+            c_ts = c_doc["ultima_ubicacion_ts"]
+            if c_ts.tzinfo is None:
+                c_ts = c_ts.replace(tzinfo=timezone.utc)
+            if abs((pac_ts - c_ts).total_seconds()) <= VENTANA_ZONA_MUERTA_S:
+                if distancia_metros(pac_lat, pac_lng, c_doc["ultima_ubicacion_lat"], c_doc["ultima_ubicacion_lng"]) <= RADIO_PROXIMIDAD_METROS:
+                    return True
+
+    for fam in familiar_ids:
+        ub = await db["UbicacionesFamiliares"].find_one({"familiar_id": fam})
+        if ub:
+            if distancia_metros(pac_lat, pac_lng, ub["latitud"], ub["longitud"]) <= RADIO_PROXIMIDAD_METROS:
+                return True
+        try:
+            f_doc = await db["Familiares"].find_one(
+                {"_id": ObjectId(fam)},
+                {"ultima_ubicacion_lat": 1, "ultima_ubicacion_lng": 1, "ultima_ubicacion_ts": 1},
+            )
+        except Exception:
+            f_doc = None
+        if f_doc and f_doc.get("ultima_ubicacion_ts") and pac_ts:
+            f_ts = f_doc["ultima_ubicacion_ts"]
+            if f_ts.tzinfo is None:
+                f_ts = f_ts.replace(tzinfo=timezone.utc)
+            if abs((pac_ts - f_ts).total_seconds()) <= VENTANA_ZONA_MUERTA_S:
+                if distancia_metros(pac_lat, pac_lng, f_doc["ultima_ubicacion_lat"], f_doc["ultima_ubicacion_lng"]) <= RADIO_PROXIMIDAD_METROS:
+                    return True
+
+    return False
+
+
+async def _crear_alerta_senal_perdida(db, paciente: dict, lat: float, lng: float, grupos: list) -> None:
+    paciente_id_str = str(paciente["_id"])
+    nombre_paciente = paciente.get("nombre_paciente", "El paciente")
+    ahora = datetime.now(timezone.utc)
+
+    alerta_doc = {
+        "paciente_id":            paciente_id_str,
+        "paciente_nombre":        nombre_paciente,
+        "zonasegura_id":          None,
+        "zona_nombre":            None,
+        "tipo":                   "senal_perdida",
+        "latitud":                lat,
+        "longitud":               lng,
+        "timestamp":              ahora,
+        "estado":                 "pendiente",
+        "mensaje":                f"{nombre_paciente} ha perdido la señal GPS",
+        "cuidadores_notificados": [],
+        "fcm_exitos":             0,
+        "fcm_fallos":             0,
+        "ultima_notif":           ahora,
+    }
+    result    = await db["Alertas"].insert_one(alerta_doc)
+    alerta_id = result.inserted_id
+
+    cuidador_ids: list[str] = []
+    for g in grupos:
+        cuidador_ids.extend(g.get("cuidador_ids", []))
+    cuidador_ids_unicos = list(set(cuidador_ids))
+
+    cuidadores = await db["Cuidadores"].find({
+        "_id": {"$in": [
+            ObjectId(cid) if isinstance(cid, str) and len(cid) == 24 else cid
+            for cid in cuidador_ids_unicos
+        ]}
+    }).to_list(length=None)
+
+    tokens                 = [c.get("fcm_token") for c in cuidadores if c.get("fcm_token")]
+    cuidador_ids_con_token = [to_str_id(c["_id"]) for c in cuidadores if c.get("fcm_token")]
+
+    if not tokens:
+        await db["Alertas"].update_one({"_id": alerta_id}, {"$set": {"estado": "fallida"}})
+        logger.warning("Sin tokens FCM para alerta señal perdida | paciente=%s", paciente_id_str)
+        return
+
+    resultado = await enviar_notificacion_multicast(
+        tokens=tokens,
+        titulo=f"📡 Señal GPS perdida — {nombre_paciente}",
+        cuerpo=f"No se detecta señal del dispositivo de {nombre_paciente}. Última posición registrada disponible.",
+        data={
+            "tipo":        "senal_perdida",
+            "alerta_id":   str(alerta_id),
+            "paciente_id": paciente_id_str,
+            "lat":         str(lat),
+            "lng":         str(lng),
+        },
+    )
+
+    estado_final = "enviada" if resultado["exitos"] > 0 else "fallida"
+    await db["Alertas"].update_one(
+        {"_id": alerta_id},
+        {"$set": {
+            "estado":                 estado_final,
+            "cuidadores_notificados": cuidador_ids_con_token,
+            "fcm_exitos":             resultado["exitos"],
+            "fcm_fallos":             resultado["fallos"],
+        }},
+    )
+    logger.info(
+        "Alerta señal perdida | paciente=%s | FCM exitos=%d fallos=%d",
+        paciente_id_str, resultado["exitos"], resultado["fallos"],
+    )
+    if resultado["tokens_invalidos"]:
+        await db["Cuidadores"].update_many(
+            {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
+            {"$unset": {"fcm_token": ""}},
+        )
+
+
+async def verificar_senal_perdida() -> None:
+    db    = get_database()
+    ahora = datetime.now(timezone.utc)
+    limite_inferior = ahora - timedelta(seconds=VENTANA_DISPOSITIVO_S)
+    limite_superior = ahora - timedelta(seconds=UMBRAL_SENAL_PERDIDA_S)
+
+    dispositivos = await db["Dispositivos"].find({
+        "ultima_conexion": {"$gte": limite_inferior, "$lt": limite_superior},
+        "paciente_id":     {"$exists": True, "$ne": None},
+    }).to_list(length=None)
+
+    for dispositivo in dispositivos:
+        paciente_id_str = str(dispositivo["paciente_id"])
+        try:
+            paciente = await db["Pacientes"].find_one({"_id": ObjectId(paciente_id_str)})
+        except Exception:
+            paciente = await db["Pacientes"].find_one({"_id": paciente_id_str})
+        if not paciente:
+            continue
+
+        ultima_alerta_ts = paciente.get("ultima_senal_perdida_alerta")
+        if ultima_alerta_ts is not None:
+            if ultima_alerta_ts.tzinfo is None:
+                ultima_alerta_ts = ultima_alerta_ts.replace(tzinfo=timezone.utc)
+            if (ahora - ultima_alerta_ts).total_seconds() < COOLDOWN_SENAL_PERDIDA_S:
+                continue
+
+        ultima_ub = paciente.get("ultima_ubicacion")
+        if not ultima_ub:
+            continue
+        pac_lat = ultima_ub.get("latitud")
+        pac_lng = ultima_ub.get("longitud")
+        if pac_lat is None or pac_lng is None:
+            continue
+
+        pac_ts = dispositivo.get("ultima_conexion")
+        if pac_ts and pac_ts.tzinfo is None:
+            pac_ts = pac_ts.replace(tzinfo=timezone.utc)
+
+        grupos = await db["Grupos"].find({"paciente_ids": paciente_id_str}).to_list(length=None)
+        if not grupos:
+            continue
+
+        if await _alguien_cerca_o_zona_muerta(db, grupos, pac_lat, pac_lng, pac_ts):
+            logger.info("Señal perdida suprimida (proximidad/zona muerta) | paciente=%s", paciente_id_str)
+            continue
+
+        await _crear_alerta_senal_perdida(db, paciente, pac_lat, pac_lng, grupos)
+
+        try:
+            await db["Pacientes"].update_one(
+                {"_id": ObjectId(paciente_id_str)},
+                {"$set": {"ultima_senal_perdida_alerta": ahora}},
+            )
+        except Exception:
+            await db["Pacientes"].update_one(
+                {"_id": paciente_id_str},
+                {"$set": {"ultima_senal_perdida_alerta": ahora}},
+            )
+
+
+async def resolver_alertas_senal_perdida(paciente_id_str: str) -> None:
+    db     = get_database()
+    result = await db["Alertas"].update_many(
+        {
+            "paciente_id": paciente_id_str,
+            "tipo":        "senal_perdida",
+            "estado":      {"$in": ["pendiente", "enviada"]},
+        },
+        {"$set": {"estado": "resuelta"}},
+    )
+    if result.modified_count > 0:
+        logger.info(
+            "Alertas señal perdida resueltas automáticamente | paciente=%s | count=%d",
+            paciente_id_str, result.modified_count,
+        )
+    try:
+        await db["Pacientes"].update_one(
+            {"_id": ObjectId(paciente_id_str)},
+            {"$unset": {"ultima_senal_perdida_alerta": ""}},
+        )
+    except Exception:
+        pass
