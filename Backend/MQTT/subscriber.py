@@ -37,10 +37,10 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
             {
                 "$set": {
                     "id_dispositivo":        id_dispositivo,
-                    "dispositivo_detectado": datetime.utcnow(),
+                    "dispositivo_detectado": datetime.now(timezone.utc),
                 },
                 "$setOnInsert": {
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
                 }
             },
             upsert=True,
@@ -56,7 +56,7 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
     # ── 3. El dispositivo existe en Dispositivos → actualizar última conexión ─
     await db["Dispositivos"].update_one(
         {"id_dispositivo": id_dispositivo},
-        {"$set": {"ultima_conexion": datetime.utcnow()}},
+        {"$set": {"ultima_conexion": datetime.now(timezone.utc)}},
     )
 
     paciente_id = dispositivo.get("paciente_id")
@@ -130,6 +130,7 @@ async def manejar_mensaje(message: aiomqtt.Message) -> None:
 
 async def mqtt_subscriber_task() -> None:
     tls_context = ssl.create_default_context()
+    delay = 5
 
     while True:
         try:
@@ -145,6 +146,7 @@ async def mqtt_subscriber_task() -> None:
             ) as client:
                 await client.subscribe(TOPIC_PATRON)
                 Logger.add_to_log("info", f"Suscrito a {TOPIC_PATRON}")
+                delay = 5  # reset backoff on successful connection
 
                 async for message in client.messages:
                     try:
@@ -153,11 +155,13 @@ async def mqtt_subscriber_task() -> None:
                         Logger.add_to_log("error", f"Error procesando mensaje MQTT: {ex}")
 
         except aiomqtt.MqttError as e:
-            Logger.add_to_log("warn", f"Conexión MQTT perdida: {e} — reintentando en 5s")
-            await asyncio.sleep(5)
+            Logger.add_to_log("warn", f"Conexión MQTT perdida: {e} — reintentando en {delay}s")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
         except asyncio.CancelledError:
             Logger.add_to_log("info", "Tarea MQTT cancelada (shutdown del backend)")
             raise
         except Exception as ex:
             Logger.add_to_log("error", f"Error inesperado en subscriber MQTT: {ex}")
-            await asyncio.sleep(5)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)

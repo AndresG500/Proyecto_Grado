@@ -9,18 +9,19 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/cuidadores", tags=["Cuidadores"])
 
 class FCMToken(BaseModel):
-    token: str = Field(..., example="fcm_token_example")
+    token: str = Field(..., max_length=512)
 
 @router.post("/registrar")
 async def registrar(datos: CrearCuidador):
     resultado = await registrar_cuidador(datos)
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado
 
 @router.delete("/eliminar")
-async def eliminar(email: str, cuidador_actual = Depends(get_cuidador_actual)):
-    resultado = await borrar_cuidador(email, cuidador_actual["email"])
+async def eliminar(cuidador_actual = Depends(get_cuidador_actual)):
+    email = cuidador_actual["email"]
+    resultado = await borrar_cuidador(email, email)
     if "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     return resultado

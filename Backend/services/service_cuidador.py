@@ -1,8 +1,9 @@
 from database.database import get_database
 from models.model_cuidador import CrearCuidador, ActualizarCuidador
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import bcrypt
+from bson import ObjectId
 from utils.Logger import Logger
 from security.jwt_handler import crear_token
 
@@ -16,11 +17,11 @@ async def registrar_cuidador(datos: CrearCuidador):
 
         if await coleccion.find_one({"email": datos.email}):
             Logger.add_to_log("warn", f"Correo ya registrado: {datos.email}")
-            return {"mensaje": "Este correo ya ha sido registrado"}
+            return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         if datos.phone and await coleccion.find_one({"phone": datos.phone}):
             Logger.add_to_log("warn", f"Teléfono ya registrado: {datos.phone}")
-            return {"mensaje": "Este teléfono ya ha sido registrado"}
+            return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         hashed = bcrypt.hashpw(datos.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
 
@@ -31,7 +32,7 @@ async def registrar_cuidador(datos: CrearCuidador):
             "phone":  datos.phone,
             "patient_ids": [],
             "activo": True,
-            "fecha_creacion": datetime.utcnow(),
+            "fecha_creacion": datetime.now(timezone.utc),
         })
 
         Logger.add_to_log("info", f"Cuidador registrado")
@@ -48,15 +49,39 @@ async def borrar_cuidador(email: str, email_solicitante: str):
             Logger.add_to_log("warn", f"Intento de eliminación no autorizado: {email_solicitante} tried to delete {email}")
             return {"error": "No tienes permiso para eliminar esta cuenta"}
 
-        coleccion = get_database()["Cuidadores"]
+        db = get_database()
+        coleccion = db["Cuidadores"]
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
             Logger.add_to_log("warn", f"Cuidador no encontrado para eliminar: {email}")
             return {"mensaje": "No se encontró la cuenta"}
 
+        cuidador_id = str(cuidador["_id"])
+
+        # Cascade: delete patients and their dependent data
+        pacientes = await db["Pacientes"].find({"id_cuidador": cuidador_id}).to_list(length=None)
+        paciente_ids = [str(p["_id"]) for p in pacientes]
+        if paciente_ids:
+            await db["ZonasSeguras"].delete_many({"paciente_id": {"$in": paciente_ids}})
+            await db["Alertas"].delete_many({"paciente_id": {"$in": paciente_ids}})
+            await db["Historial"].delete_many({"paciente_id": {"$in": paciente_ids}})
+            await db["Pacientes"].delete_many({"id_cuidador": cuidador_id})
+
+        # Groups where cuidador is principal: delete the group
+        async for grupo in db["Grupos"].find({"cuidador_principal_id": cuidador_id}):
+            await db["Grupos"].delete_one({"_id": grupo["_id"]})
+
+        # Groups where cuidador is just a member: remove from list
+        await db["Grupos"].update_many(
+            {"cuidador_ids": cuidador_id},
+            {"$pull": {"cuidador_ids": cuidador_id}}
+        )
+
+        await db["UbicacionesCuidadores"].delete_one({"cuidador_id": cuidador_id})
+
         await coleccion.delete_one({"email": email})
-        Logger.add_to_log("info", f"Cuidador eliminado: {email}")
+        Logger.add_to_log("info", f"Cuidador eliminado con cascade: {email}")
         return {"mensaje": "Cuenta eliminada exitosamente"}
 
     except Exception as ex:

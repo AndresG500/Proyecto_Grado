@@ -118,6 +118,10 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     var zoneCircles = {};
     var pacienteNames = {};
 
+    function htmlEncode(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
     function crearIconoPaciente(nombre) {
       var html =
         '<div style="display:flex;flex-direction:column;align-items:center;">' +
@@ -126,7 +130,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
               '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
             '</svg>' +
           '</div>' +
-          '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#102e50;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + nombre + '</div>' +
+          '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#102e50;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + htmlEncode(nombre) + '</div>' +
         '</div>';
       return L.divIcon({ html: html, className: '', iconSize: [90, 58], iconAnchor: [45, 18] });
     }
@@ -235,7 +239,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 export default function MapScreen() {
   const navigation  = useNavigation()
   const router      = useRouter()
-  const { tipoUsuario, cuidador } = useAuth()
+  const { tipoUsuario, cuidador, token, loading: authLoading } = useAuth()
   const webViewRef  = useRef<WebView>(null)
   const [pacientes,          setPacientes]          = useState<any[]>([])
   const [alertasPendientes,  setAlertasPendientes]  = useState(0)
@@ -250,9 +254,10 @@ export default function MapScreen() {
   const zonasRef          = useRef<any[]>([])
   const mapaListo         = useRef(false)
 
-  const { ubicacion, gpsActivo } = useSSEUbicacion(tipoUsuario === 'familiar' ? null : selPacId)
+  const { ubicacion, gpsActivo } = useSSEUbicacion(selPacId)
 
   const cargarDatos = useCallback(async () => {
+    if (!token) return
     try {
       const resPac = tipoUsuario === 'familiar'
         ? await familiarService.misPacientes()
@@ -260,8 +265,11 @@ export default function MapScreen() {
       const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
       setPacientes(pacs)
 
-      if (pacs.length > 0 && !selPacId) {
-        setSelPacId(pacs[0].id_paciente ?? pacs[0].id)
+      if (pacs.length > 0) {
+        const idExiste = pacs.some((p: any) => (p.id_paciente ?? p.id) === selPacId)
+        if (!selPacId || !idExiste) {
+          setSelPacId(pacs[0].id_paciente ?? pacs[0].id)
+        }
       }
 
       try {
@@ -370,7 +378,7 @@ export default function MapScreen() {
     } finally {
       setLoading(false)
     }
-  }, [tipoUsuario]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tipoUsuario, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     cargarDatos()
@@ -395,10 +403,17 @@ export default function MapScreen() {
   }, [gpsActivo, ubicacion])
 
   useEffect(() => {
-    if (tipoUsuario === 'familiar') return
+    gruposRef.current = []
+    gruposFamiliarRef.current = []
+  }, [tipoUsuario])
+
+  useEffect(() => {
+    if (authLoading || !token || tipoUsuario === 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
+    let cancelado = false
 
     iniciarSeguimiento(({ latitude, longitude }) => {
+      if (cancelado) return
       const gs = gruposRef.current
       for (const g of gs) {
         enviarUbicacionCuidador(g.id, latitude, longitude)
@@ -407,17 +422,25 @@ export default function MapScreen() {
       const js = `updateCuidador('${miId}', ${latitude}, ${longitude}); true;`
       webViewRef.current?.injectJavaScript(js)
     })
-      .then((sub) => { suscripcion = sub })
+      .then((sub) => {
+        if (cancelado) sub.remove()
+        else suscripcion = sub
+      })
       .catch(() => {})
 
-    return () => { suscripcion?.remove() }
-  }, [tipoUsuario, cuidador])
+    return () => {
+      cancelado = true
+      suscripcion?.remove()
+    }
+  }, [tipoUsuario, cuidador, authLoading, token])
 
   useEffect(() => {
-    if (tipoUsuario !== 'familiar') return
+    if (authLoading || !token || tipoUsuario !== 'familiar') return
     let suscripcion: Location.LocationSubscription | null = null
+    let cancelado = false
 
     iniciarSeguimiento(({ latitude, longitude }) => {
+      if (cancelado) return
       const gs = gruposFamiliarRef.current
       for (const g of gs) {
         const gId = g.id ?? g.grupo_id ?? g._id
@@ -427,11 +450,17 @@ export default function MapScreen() {
       const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}); true;`
       webViewRef.current?.injectJavaScript(js)
     })
-      .then((sub) => { suscripcion = sub })
+      .then((sub) => {
+        if (cancelado) sub.remove()
+        else suscripcion = sub
+      })
       .catch(() => {})
 
-    return () => { suscripcion?.remove() }
-  }, [tipoUsuario, cuidador])
+    return () => {
+      cancelado = true
+      suscripcion?.remove()
+    }
+  }, [tipoUsuario, cuidador, authLoading, token])
 
   useFocusEffect(
     useCallback(() => {

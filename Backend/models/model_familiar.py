@@ -1,17 +1,17 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime
 
 
 class CrearFamiliar(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    email: str = Field(...)
+    email: EmailStr = Field(..., max_length=254)
     password: str = Field(..., min_length=8)
-    phone: Optional[str] = Field(None)
+    phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
     codigo_grupo: Optional[str] = Field(None)
 
 class VerificarFamiliar(BaseModel):
-    email: str = Field(...)
+    email: EmailStr = Field(..., max_length=254)
     password: str = Field(...)
 
 class RespuestaFamiliar(BaseModel):

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   View, Text, TouchableOpacity, Modal, StyleSheet,
   ActivityIndicator, Alert, ScrollView,
@@ -46,6 +46,12 @@ export default function ModoViajeModal({ visible, onClose, pacientes, estadoActi
   const [tipoSel,     setTipoSel]     = useState<Tipo | null>(null)
   const [pacienteSel, setPacienteSel] = useState<string>(pacientes[0]?.id ?? '')
   const [cargando,    setCargando]    = useState(false)
+
+  useEffect(() => {
+    if (pacientes.length > 0 && !pacienteSel) {
+      setPacienteSel(pacientes[0].id)
+    }
+  }, [pacientes])
 
   const resetear = () => {
     setPaso('tipo')

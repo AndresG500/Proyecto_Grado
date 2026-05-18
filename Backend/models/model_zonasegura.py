@@ -26,7 +26,7 @@ class CrearZonaSegura(BaseModel):
 class ActualizarZonaSegura(BaseModel):
     nombre: Optional[str] = Field(None, min_length=2, max_length=100, description="Nuevo nombre de la zona")
     centro: Optional[CentroZona] = Field(None, description="Nuevo centro de la zona")
-    radio_metros: Optional[float] = Field(None, ge=10, le=5000, description="Nuevo radio de la zona")
+    radio_metros: Optional[float] = Field(None, ge=10, le=500, description="Nuevo radio de la zona")
     activa: Optional[bool] = Field(None, description="Estado de la zona")
 
 class RespuestaZonaSegura(ZonaSeguraBase):

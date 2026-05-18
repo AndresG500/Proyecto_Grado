@@ -6,7 +6,7 @@ from utils.sanitizer import sanitize_string
 
 class CuidadorBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr = Field(...)
+    email: EmailStr = Field(..., max_length=254)
     phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
     fcm_token: Optional[str] = None
 
@@ -35,5 +35,5 @@ class ActualizarCuidador(BaseModel):
     password: Optional[str] = Field(None, min_length=8)
 
 class VerificarCuidador(BaseModel):
-    email: EmailStr = Field(...)
+    email: EmailStr = Field(..., max_length=254)
     password: str = Field(...)

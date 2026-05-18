@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from database.database import get_database  # ← corregido
 from models.model_dispositivo import ActualizarDispositivo
@@ -20,10 +20,10 @@ async def registrar_dispositivo(id_dispositivo: str):
             {
                 "$set": {
                     "id_dispositivo":        id_dispositivo,
-                    "dispositivo_detectado": datetime.utcnow(),
+                    "dispositivo_detectado": datetime.now(timezone.utc),
                 },
                 "$setOnInsert": {
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
                 }
             },
             upsert=True,
@@ -36,13 +36,35 @@ async def registrar_dispositivo(id_dispositivo: str):
         return {"error": f"No se pudo registrar el dispositivo: {ex}"}
 
 
-async def obtener_dispositivo(id_dispositivo: str):
+async def _cuidador_es_dueno_del_dispositivo(dispositivo: dict, cuidador_email: str) -> bool:
+    """Verifica que el cuidador autenticado es dueño del paciente al que pertenece el dispositivo."""
+    paciente_id = dispositivo.get("paciente_id")
+    if not paciente_id:
+        return False
+    try:
+        db = get_database()
+        cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+        if not cuidador:
+            return False
+        paciente = await db["Pacientes"].find_one({"_id": ObjectId(paciente_id)})
+        if not paciente:
+            return False
+        return str(paciente.get("id_cuidador")) == str(cuidador["_id"])
+    except Exception:
+        return False
+
+
+async def obtener_dispositivo(id_dispositivo: str, cuidador_email: str):
     try:
         coleccion = get_database()["Dispositivos"]
         dispositivo = await coleccion.find_one({"id_dispositivo": id_dispositivo})
         if not dispositivo:
             Logger.add_to_log("warn", f"Dispositivo no encontrado: {id_dispositivo}")
             return {"mensaje": "No se encontró el dispositivo"}
+
+        if not await _cuidador_es_dueno_del_dispositivo(dispositivo, cuidador_email):
+            Logger.add_to_log("warn", f"Acceso no autorizado al dispositivo {id_dispositivo} por {cuidador_email}")
+            return {"error": "No tienes permiso para ver este dispositivo"}
 
         dispositivo["id"] = str(dispositivo["_id"])
         del dispositivo["_id"]
@@ -53,10 +75,25 @@ async def obtener_dispositivo(id_dispositivo: str):
         return {"error": f"No se pudo obtener el dispositivo: {ex}"}
 
 
-async def obtener_dispositivo_por_paciente(paciente_id: str):
+async def obtener_dispositivo_por_paciente(paciente_id: str, cuidador_email: str):
     try:
-        coleccion = get_database()["Dispositivos"]
-        dispositivo = await coleccion.find_one({"paciente_id": paciente_id})
+        db = get_database()
+
+        try:
+            paciente_oid = ObjectId(paciente_id)
+        except Exception:
+            return {"error": "ID de paciente inválido"}
+
+        cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
+        if not cuidador:
+            return {"error": "Cuidador no encontrado"}
+
+        paciente = await db["Pacientes"].find_one({"_id": paciente_oid})
+        if not paciente or str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
+            Logger.add_to_log("warn", f"Acceso no autorizado al paciente {paciente_id} por {cuidador_email}")
+            return {"error": "No tienes permiso para ver este paciente"}
+
+        dispositivo = await db["Dispositivos"].find_one({"paciente_id": paciente_id})
         if not dispositivo:
             Logger.add_to_log("warn", f"Dispositivo no encontrado para paciente: {paciente_id}")
             return {"mensaje": "No se encontró un dispositivo asociado a este paciente"}
@@ -146,7 +183,7 @@ async def desvincular_dispositivo(id_dispositivo: str, cuidador_email: str):
             {"$set": {
                 "paciente_id":     None,
                 "estado":          False,
-                "ultima_conexion": datetime.utcnow()
+                "ultima_conexion": datetime.now(timezone.utc)
             }}
         )
 
@@ -165,7 +202,7 @@ async def anunciar_dispositivo(id_dispositivo: str):
         coleccion = get_database()["DispositivosDisponibles"]
         await coleccion.update_one(
             {"id_dispositivo": id_dispositivo},
-            {"$set": {"id_dispositivo": id_dispositivo, "dispositivo_detectado": datetime.utcnow()}},
+            {"$set": {"id_dispositivo": id_dispositivo, "dispositivo_detectado": datetime.now(timezone.utc)}},
             upsert=True
         )
         Logger.add_to_log("info", f"Dispositivo anunciado: {id_dispositivo}")
@@ -186,7 +223,7 @@ async def obtener_dispositivos_disponibles() -> list:
             "id_dispositivo", {"paciente_id": {"$ne": None}}
         )
 
-        corte = datetime.utcnow() - timedelta(minutes=MINUTOS_DISPONIBLE)
+        corte = datetime.now(timezone.utc) - timedelta(minutes=MINUTOS_DISPONIBLE)
 
         cursor = disponibles_col.find({
             "dispositivo_detectado": {"$gte": corte},
@@ -254,7 +291,7 @@ async def vincular_dispositivo(id_dispositivo: str, paciente_id: str, cuidador_e
                 {"$set": {
                     "paciente_id":     paciente_id,
                     "estado":          True,
-                    "ultima_conexion": datetime.utcnow()
+                    "ultima_conexion": datetime.now(timezone.utc)
                 }}
             )
         else:
@@ -263,9 +300,9 @@ async def vincular_dispositivo(id_dispositivo: str, paciente_id: str, cuidador_e
                 "paciente_id":         paciente_id,
                 "estado":              True,
                 "ultima_localizacion": None,
-                "ultima_conexion":     datetime.utcnow(),
+                "ultima_conexion":     datetime.now(timezone.utc),
                 "nivel_bateria":       None,
-                "created_at":          datetime.utcnow()
+                "created_at":          datetime.now(timezone.utc)
             })
 
         await disponibles_col.delete_one({"id_dispositivo": id_dispositivo})

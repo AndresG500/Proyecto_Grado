@@ -1,8 +1,10 @@
-from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, status
+from typing import Optional, Annotated
+from fastapi import APIRouter, HTTPException, Depends, status, Path
 from services.service_alerta import listar_alertas, listar_alertas_familiar, obtener_alerta, actualizar_estado
 from models.model_alertas import RespuestaAlerta
 from security.dependencies import get_cuidador_actual, get_familiar_actual
+
+MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 
 router = APIRouter(prefix="/alertas", tags=["alertas"])
 
@@ -37,7 +39,7 @@ async def alertas_listadas(
 
 @router.get("/{alerta_id}", response_model=RespuestaAlerta)
 async def alertas_obtenidas(
-    alerta_id: str,
+    alerta_id: MongoId,
     cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
     alerta = await obtener_alerta(alerta_id, str(cuidador_actual["_id"]))
@@ -48,7 +50,7 @@ async def alertas_obtenidas(
 
 @router.patch("/{alerta_id}/resolver", response_model=RespuestaAlerta)
 async def resolver_alerta(
-    alerta_id: str,
+    alerta_id: MongoId,
     cuidador_actual: dict = Depends(get_cuidador_actual),
 ):
     alerta = await actualizar_estado(alerta_id, "resuelta", str(cuidador_actual["_id"]))

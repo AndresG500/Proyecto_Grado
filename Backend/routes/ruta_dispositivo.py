@@ -14,9 +14,9 @@ async def obtener_dispositivo(
     id_dispositivo: str,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
-    resultado = await service_dispositivo.obtener_dispositivo(id_dispositivo)
+    resultado = await service_dispositivo.obtener_dispositivo(id_dispositivo, cuidador_actual["email"])
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=403, detail=resultado["error"])
     if "mensaje" in resultado:
         raise HTTPException(status_code=404, detail=resultado["mensaje"])
     return resultado
@@ -27,9 +27,9 @@ async def obtener_dispositivo_por_paciente(
     paciente_id: str,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
-    resultado = await service_dispositivo.obtener_dispositivo_por_paciente(paciente_id)
+    resultado = await service_dispositivo.obtener_dispositivo_por_paciente(paciente_id, cuidador_actual["email"])
     if "error" in resultado:
-        raise HTTPException(status_code=500, detail=resultado["error"])
+        raise HTTPException(status_code=403, detail=resultado["error"])
     if "mensaje" in resultado:
         raise HTTPException(status_code=404, detail=resultado["mensaje"])
     return resultado

@@ -1,5 +1,5 @@
 # services/service_zona_segura.py
-from datetime import datetime
+from datetime import datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 from database.database import get_database
 from models.model_zonasegura import CrearZonaSegura, ActualizarZonaSegura
@@ -38,6 +38,15 @@ async def obtener_zonas_familiar(familiar_id: str) -> list:
     return zonas
 
 
+async def verificar_paciente_pertenece_a_familiar(paciente_id: str, familiar_id: str) -> bool:
+    try:
+        db = get_database()
+        grupo = await db["Grupos"].find_one({"familiar_ids": familiar_id, "paciente_ids": paciente_id})
+        return grupo is not None
+    except Exception:
+        return False
+
+
 async def verificar_paciente_pertenece_a_cuidador(paciente_id: str, cuidador_email: str) -> bool:
     try:
         db = get_database()
@@ -65,17 +74,31 @@ async def crear_zona_segura(datos: CrearZonaSegura):
             Logger.add_to_log("warn", f"Zona ya existe para paciente: {datos.paciente_id}")
             return {"mensaje": "Ya existe una zona con ese nombre para este paciente"}
 
+        # Activar inmediatamente si el paciente ya está dentro según su última ubicación conocida
+        activa_inicial = False
+        try:
+            paciente = await db["Pacientes"].find_one({"_id": ObjectId(datos.paciente_id)})
+            if paciente and paciente.get("ultima_ubicacion"):
+                ul = paciente["ultima_ubicacion"]
+                activa_inicial = verificar_si_dentro(
+                    ul["latitud"], ul["longitud"],
+                    datos.centro.latitud, datos.centro.longitud,
+                    datos.radio_metros,
+                )
+        except Exception:
+            pass
+
         await coleccion.insert_one({
             "paciente_id": datos.paciente_id,
             "cuidador_id": datos.cuidador_id,
             "nombre": sanitize_string(datos.nombre, 100),
             "centro": datos.centro.model_dump(),
             "radio_metros": datos.radio_metros,
-            "activa": datos.activa,
-            "created_at": datetime.utcnow()
+            "activa": activa_inicial,
+            "created_at": datetime.now(timezone.utc)
         })
 
-        Logger.add_to_log("info", f"Zona segura creada para paciente: {datos.paciente_id}")
+        Logger.add_to_log("info", f"Zona segura creada para paciente: {datos.paciente_id} (activa={activa_inicial})")
         return {"mensaje": "Zona segura creada exitosamente"}
 
     except Exception as ex:

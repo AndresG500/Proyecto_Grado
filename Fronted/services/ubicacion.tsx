@@ -37,8 +37,8 @@ export const enviarUbicacionCuidador = async (
       latitud:  latitude,
       longitud: longitude,
     })
-  } catch {
-    // silencioso — no interrumpir el tracker por errores de red
+  } catch (err: any) {
+    console.warn('[ubicacion] enviarUbicacionCuidador:', err?.response?.status ?? err?.message)
   }
 }
 
@@ -81,8 +81,8 @@ export const enviarUbicacionFamiliar = async (
       latitud:  latitude,
       longitud: longitude,
     })
-  } catch {
-    // silencioso — no interrumpir el tracker por errores de red
+  } catch (err: any) {
+    console.warn('[ubicacion] enviarUbicacionFamiliar:', err?.response?.status ?? err?.message)
   }
 }
 

@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from bson import ObjectId
@@ -6,8 +5,7 @@ from FCM.client import enviar_notificacion_multicast
 from utilidades.geo import distancia_metros
 from utilidades.mongo_utils import to_object_id, to_str_id
 from database.database import get_database
-
-logger = logging.getLogger(__name__)
+from utils.Logger import Logger
 
 COOLDOWN_ALERTA_SEGUNDOS    = 300   # 5 minutos entre alertas de zona
 COOLDOWN_VELOCIDAD_SEGUNDOS = 120   # 2 minutos entre notificaciones de anomalía
@@ -16,7 +14,7 @@ VELOCIDAD_ANOMALIA_KMH      = 50.0  # umbral km/h
 UMBRAL_SENAL_PERDIDA_S   = 60    # segundos sin datos → GPS offline
 VENTANA_DISPOSITIVO_S    = 300   # dispositivo debe haber tenido señal en los últimos 5 min
 COOLDOWN_SENAL_PERDIDA_S = 300   # 5 min entre alertas de señal perdida
-RADIO_PROXIMIDAD_METROS  = 150   # radio para considerar que alguien está "cerca"
+RADIO_PROXIMIDAD_METROS  = 50    # radio para considerar que alguien está "cerca"
 VENTANA_ZONA_MUERTA_S    = 180   # ambos perdieron señal en un margen de 3 min → zona muerta
 
 
@@ -35,12 +33,27 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
     else:
         paciente_id_str = str(paciente_id)
 
-    # BUG CORREGIDO: campo "activa": True en vez de "estado": "activa"
-    zonas = await coleccion_zonas_seguras.find({
+    todas_zonas = await coleccion_zonas_seguras.find({
         "paciente_id": paciente_id_str,
-        "activa": True,
     }).to_list(length=None)
 
+    if not todas_zonas:
+        return
+
+    # Auto-activar zonas inactivas cuando el paciente entra por primera vez
+    for zona in todas_zonas:
+        if not zona.get("activa", False):
+            d = distancia_metros(lat, lng, zona["centro"]["latitud"], zona["centro"]["longitud"])
+            if d <= zona["radio_metros"]:
+                await coleccion_zonas_seguras.update_one(
+                    {"_id": zona["_id"]},
+                    {"$set": {"activa": True}},
+                )
+                zona["activa"] = True
+                Logger.add_to_log("info", f"Zona '{zona['nombre']}' auto-activada | paciente={paciente_id_str}")
+
+    # Solo las zonas activas generan alertas
+    zonas = [z for z in todas_zonas if z.get("activa", False)]
     if not zonas:
         return
 
@@ -49,9 +62,6 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
     distancia_minima = float("inf")
 
     for zona in zonas:
-        # BUG CORREGIDO: zona["centro"]["latitud"] y zona["centro"]["longitud"]
-        #                en vez de zona["latitud_centro"] / zona["longitud_centro"]
-        # BUG CORREGIDO: zona["radio_metros"] en vez de zona["radio"]
         d = distancia_metros(
             lat, lng,
             zona["centro"]["latitud"],
@@ -70,7 +80,7 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
         paciente = await coleccion_pacientes.find_one({"_id": paciente_id_str})
 
     if not paciente:
-        logger.warning("Paciente %s no encontrado al evaluar zonas", paciente_id_str)
+        Logger.add_to_log("warn", f"Paciente {paciente_id_str} no encontrado al evaluar zonas")
         return
 
     estaba_fuera  = paciente.get("fuera_de_zona", False)
@@ -89,7 +99,7 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
                     {"_id": paciente_id_str},
                     {"$set": {"fuera_de_zona": False}},
                 )
-            logger.info("Paciente %s volvió a zona segura", paciente_id_str)
+            Logger.add_to_log("info", f"Paciente {paciente_id_str} volvió a zona segura")
         return
 
     if not estaba_fuera:
@@ -145,10 +155,16 @@ async def evaluar_zonas_seguras(paciente_id, lat: float, lng: float) -> None:
 async def _actualizar_flag_zona(paciente_id_str: str, lat: float, lng: float) -> None:
     """Actualiza fuera_de_zona sin enviar alertas. Se usa durante modo viaje."""
     db = get_database()
-    zonas = await db["ZonasSeguras"].find({
-        "paciente_id": paciente_id_str,
-        "activa": True,
-    }).to_list(length=None)
+    todas_zonas = await db["ZonasSeguras"].find({"paciente_id": paciente_id_str}).to_list(length=None)
+    if not todas_zonas:
+        return
+    for zona in todas_zonas:
+        if not zona.get("activa", False):
+            d = distancia_metros(lat, lng, zona["centro"]["latitud"], zona["centro"]["longitud"])
+            if d <= zona["radio_metros"]:
+                await db["ZonasSeguras"].update_one({"_id": zona["_id"]}, {"$set": {"activa": True}})
+                zona["activa"] = True
+    zonas = [z for z in todas_zonas if z.get("activa", False)]
     if not zonas:
         return
     dentro = any(
@@ -214,10 +230,7 @@ async def detectar_anomalia_velocidad(paciente: dict, lat: float, lng: float) ->
     if velocidad_kmh < VELOCIDAD_ANOMALIA_KMH:
         return
 
-    logger.info(
-        "Anomalía velocidad | paciente=%s velocidad=%.1f km/h",
-        paciente_id_str, velocidad_kmh,
-    )
+    Logger.add_to_log("info", f"Anomalía velocidad | paciente={paciente_id_str} velocidad={velocidad_kmh:.1f} km/h")
 
     await crear_y_despachar_alerta(
         paciente=paciente,
@@ -254,7 +267,7 @@ async def procesar_ubicacion_paciente(paciente_id: str, lat: float, lng: float) 
         paciente = await db["Pacientes"].find_one({"_id": paciente_id})
 
     if not paciente:
-        logger.warning("Paciente %s no encontrado en procesar_ubicacion_paciente", paciente_id)
+        Logger.add_to_log("warn", f"Paciente {paciente_id} no encontrado en procesar_ubicacion_paciente")
         return
 
     # Verificar y expirar modo viaje si corresponde
@@ -270,12 +283,12 @@ async def procesar_ubicacion_paciente(paciente_id: str, lat: float, lng: float) 
 
     if tipo_viaje == "vehiculo":
         # Modo vehículo → suprimir alertas, pero mantener fuera_de_zona actualizado
-        logger.info("Modo viaje vehículo activo | paciente=%s — alertas suprimidas", paciente_id)
+        Logger.add_to_log("info", f"Modo viaje vehículo activo | paciente={paciente_id} — alertas suprimidas")
         await _actualizar_flag_zona(paciente_id, lat, lng)
         return
 
     # Modo caminata → suprimir alertas de zona, mantener flag y detectar velocidad
-    logger.info("Modo viaje caminata activo | paciente=%s — verificando velocidad", paciente_id)
+    Logger.add_to_log("info", f"Modo viaje caminata activo | paciente={paciente_id} — verificando velocidad")
     await _actualizar_flag_zona(paciente_id, lat, lng)
     await detectar_anomalia_velocidad(paciente, lat, lng)
 
@@ -342,7 +355,7 @@ async def crear_y_despachar_alerta(
     # BUG CORREGIDO: usa paciente_ids (array) en vez de paciente_id (singular)
     grupos = await coleccion_grupos.find({"paciente_ids": paciente_id_str}).to_list(length=None)
     if not grupos:
-        logger.warning("Paciente %s sin cuidadores asignados", paciente_id_str)
+        Logger.add_to_log("warn", f"Paciente {paciente_id_str} sin cuidadores asignados")
         await coleccion_alertas.update_one(
             {"_id": alerta_id}, {"$set": {"estado": "fallida"}}
         )
@@ -371,9 +384,7 @@ async def crear_y_despachar_alerta(
             cuidador_ids_con_token.append(to_str_id(c["_id"]))
 
     if not tokens:
-        logger.warning(
-            "Ningún cuidador del paciente %s tiene fcm_token registrado", paciente_id_str
-        )
+        Logger.add_to_log("warn", f"Ningún cuidador del paciente {paciente_id_str} tiene fcm_token registrado")
         await coleccion_alertas.update_one(
             {"_id": alerta_id}, {"$set": {"estado": "fallida"}}
         )
@@ -403,18 +414,14 @@ async def crear_y_despachar_alerta(
         }},
     )
 
-    logger.info(
-        "Alerta %s | tipo=%s | paciente=%s | cuidadores=%d | FCM exitos=%d fallos=%d",
-        str(alerta_id), tipo, paciente_id_str, len(tokens),
-        resultado["exitos"], resultado["fallos"],
-    )
+    Logger.add_to_log("info", f"Alerta {alerta_id} | tipo={tipo} | paciente={paciente_id_str} | cuidadores={len(tokens)} | FCM exitos={resultado['exitos']} fallos={resultado['fallos']}")
 
     if resultado["tokens_invalidos"]:
         await coleccion_cuidadores.update_many(
             {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
             {"$unset": {"fcm_token": ""}},
         )
-        logger.info("Limpiados %d tokens FCM inválidos", len(resultado["tokens_invalidos"]))
+        Logger.add_to_log("info", f"Limpiados {len(resultado['tokens_invalidos'])} tokens FCM inválidos")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -502,10 +509,10 @@ async def reenviar_alertas_activas() -> dict:
         }).to_list(length=None)
 
         if not alertas_activas:
-            logger.info("No hay alertas activas pendientes de reenvío")
+            Logger.add_to_log("info", "No hay alertas activas pendientes de reenvío")
             return {"mensaje": "Sin alertas pendientes"}
 
-        logger.info("Encontradas %d alertas activas para reenviar", len(alertas_activas))
+        Logger.add_to_log("info", f"Encontradas {len(alertas_activas)} alertas activas para reenviar")
 
         for alerta in alertas_activas:
             paciente_id = alerta.get("paciente_id")
@@ -573,14 +580,12 @@ async def reenviar_alertas_activas() -> dict:
                 {"$set": {"ultima_notif": ahora}},
             )
 
-            logger.info(
-                "Alerta %s reenviada a %d cuidadores", alerta["_id"], resultado["exitos"]
-            )
+            Logger.add_to_log("info", f"Alerta {alerta['_id']} reenviada a {resultado['exitos']} cuidadores")
 
         return {"mensaje": f"Se procesaron {len(alertas_activas)} alertas"}
 
     except Exception as ex:
-        logger.error("Error en reenviar_alertas_activas: %s", ex)
+        Logger.add_to_log("error", f"Error en reenviar_alertas_activas: {ex}")
         return {"error": str(ex)}
 
 
@@ -681,7 +686,7 @@ async def _crear_alerta_senal_perdida(db, paciente: dict, lat: float, lng: float
 
     if not tokens:
         await db["Alertas"].update_one({"_id": alerta_id}, {"$set": {"estado": "fallida"}})
-        logger.warning("Sin tokens FCM para alerta señal perdida | paciente=%s", paciente_id_str)
+        Logger.add_to_log("warn", f"Sin tokens FCM para alerta señal perdida | paciente={paciente_id_str}")
         return
 
     resultado = await enviar_notificacion_multicast(
@@ -707,10 +712,7 @@ async def _crear_alerta_senal_perdida(db, paciente: dict, lat: float, lng: float
             "fcm_fallos":             resultado["fallos"],
         }},
     )
-    logger.info(
-        "Alerta señal perdida | paciente=%s | FCM exitos=%d fallos=%d",
-        paciente_id_str, resultado["exitos"], resultado["fallos"],
-    )
+    Logger.add_to_log("info", f"Alerta señal perdida | paciente={paciente_id_str} | FCM exitos={resultado['exitos']} fallos={resultado['fallos']}")
     if resultado["tokens_invalidos"]:
         await db["Cuidadores"].update_many(
             {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
@@ -762,7 +764,7 @@ async def verificar_senal_perdida() -> None:
             continue
 
         if await _alguien_cerca_o_zona_muerta(db, grupos, pac_lat, pac_lng, pac_ts):
-            logger.info("Señal perdida suprimida (proximidad/zona muerta) | paciente=%s", paciente_id_str)
+            Logger.add_to_log("info", f"Señal perdida suprimida (proximidad/zona muerta) | paciente={paciente_id_str}")
             continue
 
         await _crear_alerta_senal_perdida(db, paciente, pac_lat, pac_lng, grupos)
@@ -790,10 +792,7 @@ async def resolver_alertas_senal_perdida(paciente_id_str: str) -> None:
         {"$set": {"estado": "resuelta"}},
     )
     if result.modified_count > 0:
-        logger.info(
-            "Alertas señal perdida resueltas automáticamente | paciente=%s | count=%d",
-            paciente_id_str, result.modified_count,
-        )
+        Logger.add_to_log("info", f"Alertas señal perdida resueltas automáticamente | paciente={paciente_id_str} | count={result.modified_count}")
     try:
         await db["Pacientes"].update_one(
             {"_id": ObjectId(paciente_id_str)},

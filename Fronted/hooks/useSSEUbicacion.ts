@@ -45,65 +45,71 @@ export const useSSEUbicacion = (pacienteId: string | null) => {
       return;
     }
 
-    let cancelado = false;
+    let cancelado  = false;
+    let conectando = false;
     intentosRef.current = 0;
     ultimoMensajeRef.current = null;
     setGpsActivo(false);
     setErrorPermanente(false);
 
     const conectar = async (): Promise<void> => {
-      if (cancelado) return;
+      if (cancelado || conectando) return;
+      conectando = true;
 
-      if (intentosRef.current >= MAX_REINTENTOS) {
-        setErrorPermanente(true);
-        return;
-      }
-
-      esRef.current?.close();
-
-      const token = await SecureStore.getItemAsync('token');
-      if (!token || cancelado) return;
-
-      const url = `${API_URL}/pacientes/${pacienteId}/ubicacion/stream`;
-
-      const es = new EventSource(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      es.addEventListener('open', () => {
-        if (!cancelado) {
-          setConectado(true);
-          setErrorPermanente(false);
-          intentosRef.current = 0;
+      try {
+        if (intentosRef.current >= MAX_REINTENTOS) {
+          setErrorPermanente(true);
+          return;
         }
-      });
 
-      es.addEventListener('message', (e) => {
-        if (cancelado || !e.data) return;
-        try {
-          const datos = JSON.parse(e.data);
-          ultimoMensajeRef.current = Date.now();
-          setGpsActivo(true);
-          setUbicacion({
-            latitude:  datos.latitud  ?? datos.lat,
-            longitude: datos.longitud ?? datos.lng,
-            timestamp: datos.timestamp,
-          });
-        } catch (_) {}
-      });
-
-      es.addEventListener('error', () => {
-        if (cancelado) return;
-        setConectado(false);
-        setGpsActivo(false);
-        ultimoMensajeRef.current = null;
         esRef.current?.close();
-        intentosRef.current += 1;
-        const delay = Math.min(DELAY_BASE_MS * intentosRef.current, DELAY_MAX_MS);
-        setTimeout(conectar, delay);
-      });
 
-      esRef.current = es;
+        const token = await SecureStore.getItemAsync('token');
+        if (!token || cancelado) return;
+
+        const url = `${API_URL}/pacientes/${pacienteId}/ubicacion/stream`;
+
+        const es = new EventSource(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        es.addEventListener('open', () => {
+          if (!cancelado) {
+            setConectado(true);
+            setErrorPermanente(false);
+            intentosRef.current = 0;
+          }
+        });
+
+        es.addEventListener('message', (e) => {
+          if (cancelado || !e.data) return;
+          try {
+            const datos = JSON.parse(e.data);
+            ultimoMensajeRef.current = Date.now();
+            setGpsActivo(true);
+            setUbicacion({
+              latitude:  datos.latitud  ?? datos.lat,
+              longitude: datos.longitud ?? datos.lng,
+              timestamp: datos.timestamp,
+            });
+          } catch (_) {}
+        });
+
+        es.addEventListener('error', () => {
+          if (cancelado) return;
+          setConectado(false);
+          setGpsActivo(false);
+          ultimoMensajeRef.current = null;
+          esRef.current?.close();
+          intentosRef.current += 1;
+          const delay = Math.min(DELAY_BASE_MS * intentosRef.current, DELAY_MAX_MS);
+          setTimeout(conectar, delay);
+        });
+
+        esRef.current = es;
+      } finally {
+        conectando = false;
+      }
     };
 
     conectar();

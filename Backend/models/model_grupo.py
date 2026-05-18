@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 class GrupoBase(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=100)
@@ -32,10 +32,10 @@ class UbicacionCuidador(BaseModel):
     cuidador_id: Optional[str] = Field(None)
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UbicacionFamiliar(BaseModel):
     familiar_id: Optional[str] = Field(None)
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

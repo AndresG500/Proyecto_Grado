@@ -37,7 +37,15 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1D4ED8",
+          "defaultChannel": "ubilife_alertas"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,13 +1,13 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from utils.sanitizer import sanitize_string
 
 class GeoPoint(BaseModel):
     latitud: float = Field(..., ge=-90.0, le=90.0)
     longitud: float = Field(..., ge=-180.0, le=180.0)
-    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class EstadoDispositivo(str, Enum):
     ONLINE  = "online"
@@ -16,7 +16,7 @@ class EstadoDispositivo(str, Enum):
 
 class PacienteBase(BaseModel):
     nombre_paciente: str = Field(..., min_length=2, max_length=100)
-    edad_paciente: Optional[int] = Field(None, ge=0)
+    edad_paciente: Optional[int] = Field(None, ge=0, le=150)
     enfermedad: Optional[str] = Field(None, max_length=500)
     cedula: Optional[str] = Field(None, max_length=20)
     eps: Optional[str] = Field(None, max_length=100)
@@ -55,7 +55,7 @@ class RespuestaPaciente(PacienteBase):
 
 class ActualizarPaciente(BaseModel):
     nombre_paciente: Optional[str] = Field(None, min_length=2, max_length=100)
-    edad_paciente: Optional[int] = Field(None, ge=0)
+    edad_paciente: Optional[int] = Field(None, ge=0, le=150)
     enfermedad: Optional[str] = Field(None, max_length=500)
     cedula: Optional[str] = Field(None, max_length=20)
     eps: Optional[str] = Field(None, max_length=100)
@@ -73,4 +73,4 @@ class ActualizarUbicacion(BaseModel):
     latitude: float = Field(..., ge=-90.0, le=90.0)
     longitude: float = Field(..., ge=-180.0, le=180.0)
     device_id: Optional[str] = Field(None)
-    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

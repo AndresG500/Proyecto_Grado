@@ -41,7 +41,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   useEffect(() => {
     const limpiar = configurarListeners((data) => {
-      console.log('Alerta recibida:', data)
+      if (__DEV__) console.log('Alerta recibida:', data)
     })
     return limpiar
   }, [])

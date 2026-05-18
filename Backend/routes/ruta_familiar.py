@@ -3,7 +3,12 @@ from models.model_familiar import CrearFamiliar, VerificarFamiliar
 from services.service_familiar import (
     registrar_familiar, verificar_familiar,
     listar_grupos_familiar, listar_pacientes_familiar,
+    actualizar_fcm_familiar,
 )
+from pydantic import BaseModel, Field
+
+class FCMTokenFamiliar(BaseModel):
+    token: str = Field(..., max_length=512)
 from services.service_auth import revocar_token
 from security.dependencies import get_familiar_actual, oauth2_scheme
 from security.jwt_handler import verificar_token
@@ -48,6 +53,14 @@ async def mis_grupos(familiar_actual=Depends(get_familiar_actual)):
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
     return resultado
+
+
+@router.patch("/fcm-token")
+async def actualizar_fcm_token_familiar(
+    datos: FCMTokenFamiliar,
+    familiar_actual = Depends(get_familiar_actual),
+):
+    return await actualizar_fcm_familiar(familiar_actual["email"], datos.token)
 
 
 @router.get("/pacientes")

@@ -1,6 +1,8 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -23,6 +25,19 @@ if (Notifications) {
       shouldShowList: true,
     }),
   });
+
+  // Android 8+ requiere que el canal exista antes de recibir notificaciones;
+  // si el canal no existe, Android descarta la notificación silenciosamente.
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('ubilife_alertas', {
+      name: 'Alertas UbiLife',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#1D4ED8',
+      sound: 'default',
+      enableVibrate: true,
+    });
+  }
 }
 
 export async function registrarToken(): Promise<void> {
@@ -49,8 +64,13 @@ export async function registrarToken(): Promise<void> {
     const tokenStr = await SecureStore.getItemAsync('token');
     if (!tokenStr) return;
 
+    const tipoUsuario = await AsyncStorage.getItem('tipoUsuario');
+    const endpoint = tipoUsuario === 'familiar'
+      ? `${API_URL}/familiares/fcm-token`
+      : `${API_URL}/cuidadores/fcm-token`;
+
     await axios.patch(
-      `${API_URL}/cuidadores/fcm-token`,
+      endpoint,
       { token: token.data },
       { headers: { Authorization: `Bearer ${tokenStr}` } }
     );

@@ -66,6 +66,9 @@ export const familiarService = {
   misPacientes: () => api.get('/familiares/pacientes'),
 
   logout: () => api.post('/familiares/logout').catch(() => {}),
+
+  actualizarFcmToken: (token: string) =>
+    api.patch('/familiares/fcm-token', { token }),
 }
 
 // ── Pacientes ──────────────────────────────────────────────────────────────
@@ -107,10 +110,20 @@ export const zonaService = {
     radio_metros: number
   }) => api.post('/zonas-seguras/crear', datos),
 
+  crearFamiliar: (datos: {
+    nombre: string
+    paciente_id: string
+    centro: { latitud: number; longitud: number }
+    radio_metros: number
+  }) => api.post('/zonas-seguras/familiar/crear', datos),
+
   eliminar: (id: string) => api.delete(`/zonas-seguras/eliminar/${id}`),
 
   toggle: (id: string, activa: boolean) =>
     api.patch(`/zonas-seguras/actualizar/${id}`, { activa }),
+
+  actualizar: (id: string, datos: { nombre?: string; centro?: { latitud: number; longitud: number }; radio_metros?: number }) =>
+    api.patch(`/zonas-seguras/actualizar/${id}`, datos),
 
   listarFamiliar: () => api.get('/zonas-seguras/familiar/'),
 }

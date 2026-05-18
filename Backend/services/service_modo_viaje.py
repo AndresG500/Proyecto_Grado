@@ -11,6 +11,9 @@ async def activar_modo_viaje(
     duracion_horas: Optional[float],
     activado_por: str,
 ) -> dict:
+    if duracion_horas is not None and duracion_horas <= 0:
+        return {"error": "La duración debe ser mayor a 0 horas"}
+
     db = get_database()
     ahora = datetime.now(timezone.utc)
     fin = ahora + timedelta(hours=duracion_horas) if duracion_horas else None

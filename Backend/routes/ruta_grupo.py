@@ -88,6 +88,8 @@ async def obtener(
     resultado = await obtener_grupo(grupo_id)
     if "error" in resultado:
         raise HTTPException(status_code=404, detail=resultado["error"])
+    if str(cuidador_actual["_id"]) not in resultado.get("cuidador_ids", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso a este grupo")
     return resultado
 
 
@@ -111,7 +113,7 @@ async def remove_cuidador(
     cuidador_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
-    resultado = await eliminar_cuidador(grupo_id, cuidador_id)
+    resultado = await eliminar_cuidador(grupo_id, cuidador_id, str(cuidador_actual["_id"]))
     if "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     return resultado

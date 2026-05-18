@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
+from typing import Annotated
 from models.model_paciente import CrearPaciente, ActualizarPaciente
 from services.service_paciente import registrar_paciente, obtener_paciente, borrar_paciente, actualizar_paciente, listar_pacientes
-from security.dependencies import get_cuidador_actual
+from security.dependencies import get_cuidador_actual, get_cuidador_o_familiar_actual
 from fastapi.responses import StreamingResponse
 from bson import ObjectId
 import json, asyncio
@@ -9,7 +10,8 @@ from utils.Logger import Logger
 from database.database import get_database
 from utils.eventos import bus_eventos
 
-router = APIRouter(prefix="/pacientes", tags=["Pacientes"])
+router  = APIRouter(prefix="/pacientes", tags=["Pacientes"])
+MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
 
 
 # ─── PROTEGIDOS (todos requieren JWT) ────────────────────────────────────────
@@ -35,7 +37,7 @@ async def listar(cuidador_actual = Depends(get_cuidador_actual)):
 
 @router.get("/{patient_id}")
 async def obtener(
-    patient_id: str,
+    patient_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await obtener_paciente(patient_id, cuidador_actual["email"])
@@ -46,7 +48,7 @@ async def obtener(
 
 @router.delete("/{patient_id}")
 async def eliminar(
-    patient_id: str,
+    patient_id: MongoId,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await borrar_paciente(patient_id, cuidador_actual["email"])
@@ -57,7 +59,7 @@ async def eliminar(
 
 @router.put("/{patient_id}")
 async def actualizar(
-    patient_id: str,
+    patient_id: MongoId,
     datos: ActualizarPaciente,
     cuidador_actual = Depends(get_cuidador_actual)
 ):
@@ -67,10 +69,21 @@ async def actualizar(
     return resultado
 
 @router.get("/{id}/ubicacion/stream")
-async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)):
-    verificacion = await obtener_paciente(id, cuidador_actual["email"])
-    if "error" in verificacion:
-        raise HTTPException(status_code=403, detail=verificacion["error"])
+async def stream_ubicacion(id: MongoId, usuario_actual=Depends(get_cuidador_o_familiar_actual)):
+    tipo = usuario_actual.get("_tipo")
+    if tipo not in ("cuidador", "familiar"):
+        raise HTTPException(status_code=403, detail="Tipo de usuario no reconocido")
+
+    if tipo == "cuidador":
+        verificacion = await obtener_paciente(id, usuario_actual["email"])
+        if "error" in verificacion:
+            raise HTTPException(status_code=403, detail=verificacion["error"])
+    else:
+        familiar_id = str(usuario_actual["_id"])
+        db_check = get_database()
+        grupo = await db_check["Grupos"].find_one({"familiar_ids": familiar_id, "paciente_ids": id})
+        if not grupo:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este paciente")
 
     db = get_database()
 
@@ -80,7 +93,10 @@ async def stream_ubicacion(id: str, cuidador_actual=Depends(get_cuidador_actual)
         bus_eventos.suscribir(topic, cola)
         try:
             # Enviar la última ubicación conocida de inmediato
-            paciente = await db.Pacientes.find_one({"_id": ObjectId(id)})
+            try:
+                paciente = await db.Pacientes.find_one({"_id": ObjectId(id)})
+            except Exception:
+                paciente = None
             if paciente and paciente.get("ultima_ubicacion"):
                 ul = paciente["ultima_ubicacion"]
                 datos = {

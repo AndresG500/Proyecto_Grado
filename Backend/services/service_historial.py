@@ -111,7 +111,7 @@ async def obtener_historial_ubicaciones(paciente_id: str, cuidador_email: str) -
         cursor = coleccion.find(
             {"paciente_id": paciente_id, "timestamp": {"$gte": corte}},
             sort=[("timestamp", 1)]
-        )
+        ).limit(2000)
 
         historial = []
         async for doc in cursor:
@@ -155,7 +155,7 @@ async def obtener_historial_ubicaciones_familiar(paciente_id: str, familiar_id: 
         cursor = coleccion.find(
             {"paciente_id": paciente_id, "timestamp": {"$gte": corte}},
             sort=[("timestamp", 1)]
-        )
+        ).limit(2000)
 
         historial = []
         async for doc in cursor:

@@ -142,15 +142,15 @@ const styles = StyleSheet.create({
   },
   avatarOuter: {
     width: 88, height: 88, borderRadius: 44,
-    borderWidth: 2, borderColor: 'rgba(96,165,250,0.35)',
+    borderWidth: 2, borderColor: 'rgba(77,138,184,0.35)',
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 14,
-    backgroundColor: 'rgba(96,165,250,0.06)',
+    backgroundColor: 'rgba(77,138,184,0.06)',
   },
   avatarInner: {
     width: 74, height: 74, borderRadius: 37,
     backgroundColor: '#1e3a5f',
-    borderWidth: 2, borderColor: 'rgba(96,165,250,0.25)',
+    borderWidth: 2, borderColor: 'rgba(77,138,184,0.25)',
     justifyContent: 'center', alignItems: 'center',
   },
   avatarText: { fontSize: 30, fontWeight: '700', color: Colors.white },
@@ -160,9 +160,9 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   rolBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(96,165,250,0.12)',
+    backgroundColor: 'rgba(77,138,184,0.14)',
     paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(96,165,250,0.22)',
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(77,138,184,0.28)',
   },
   rolText: { fontSize: 11, color: Colors.primaryLight, fontWeight: '600' },
   onlineBadge: {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     borderRadius: 14, marginBottom: 2,
     overflow: 'hidden',
   },
-  navItemActive: { backgroundColor: 'rgba(37,99,235,0.16)' },
+  navItemActive: { backgroundColor: 'rgba(16,46,80,0.40)' },
   activeBar: {
     position: 'absolute', left: 0, top: 10, bottom: 10,
     width: 3, borderRadius: 2,

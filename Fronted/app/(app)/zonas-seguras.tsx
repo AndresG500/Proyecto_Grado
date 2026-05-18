@@ -96,9 +96,47 @@ const ZONA_MAP_HTML = `<!DOCTYPE html>
       if (circulo) circulo.setRadius(r);
     }
 
+    function setInitial(lat, lng, radio) {
+      radioActual = radio;
+      if (marcador) marcador.setLatLng([lat, lng]);
+      else marcador = L.marker([lat, lng], { icon: shieldIcon }).addTo(map);
+      if (circulo) { circulo.setLatLng([lat, lng]); circulo.setRadius(radio); }
+      else {
+        circulo = L.circle([lat, lng], {
+          radius: radio,
+          fillColor: '#2563eb',
+          fillOpacity: 0.15,
+          color: '#2563eb',
+          weight: 2
+        }).addTo(map);
+      }
+      map.setView([lat, lng], 16);
+    }
+
     function limpiar() {
       if (marcador) { map.removeLayer(marcador); marcador = null; }
       if (circulo)  { map.removeLayer(circulo);  circulo  = null; }
+    }
+
+    var existingZones = {};
+    function dibujarZonasExistentes(jsonStr) {
+      Object.values(existingZones).forEach(function(c) { map.removeLayer(c); });
+      existingZones = {};
+      var lista = JSON.parse(jsonStr);
+      lista.forEach(function(z) {
+        if (!z.centro || z.centro.latitud == null) return;
+        var color = z.activa ? '#2563eb' : '#64748b';
+        var c = L.circle([z.centro.latitud, z.centro.longitud], {
+          radius: z.radio_metros || 150,
+          fillColor: color,
+          fillOpacity: 0.08,
+          color: color,
+          weight: 1.5,
+          dashArray: '6,4',
+        }).addTo(map);
+        c.bindTooltip(z.nombre, { permanent: false, direction: 'top' });
+        existingZones[z.id] = c;
+      });
     }
   </script>
 </body>
@@ -123,7 +161,13 @@ export default function ZonasSeguras() {
   const [pacSelId,  setPacSelId]  = useState('')
   const [centro,    setCentro]    = useState<Coord | null>(null)
   const [guardando, setGuardando] = useState(false)
-  const [toggling,  setToggling]  = useState<string | null>(null)
+
+  const [editandoZona,     setEditandoZona]     = useState<any | null>(null)
+  const [editNombre,       setEditNombre]       = useState('')
+  const [editRadio,        setEditRadio]        = useState('150')
+  const [editCentro,       setEditCentro]       = useState<Coord | null>(null)
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const editMapListoRef = useRef(false)
 
   const mapaListoRef    = useRef(false)
   const pendingUbicRef  = useRef<{ c?: [number, number]; p?: [number, number] }>({})
@@ -134,6 +178,13 @@ export default function ZonasSeguras() {
     if (p) mapRef.current?.injectJavaScript(`mostrarPaciente(${p[0]}, ${p[1]}); true;`)
     if (c) mapRef.current?.injectJavaScript(`mostrarCuidador(${c[0]}, ${c[1]}); true;`)
   }, [])
+
+  const inyectarZonasEnMapa = useCallback((excludeId?: string) => {
+    if (!mapaListoRef.current) return
+    const filtradas = zonas.filter((z) => z.paciente_id === pacSelId && z.id !== excludeId)
+    const jsonStr = JSON.stringify(filtradas)
+    mapRef.current?.injectJavaScript(`dibujarZonasExistentes(${JSON.stringify(jsonStr)}); true;`)
+  }, [zonas, pacSelId])
 
   useEffect(() => {
     if (!creando) {
@@ -156,8 +207,8 @@ export default function ZonasSeguras() {
         }
       } catch {}
 
-      // Última ubicación del paciente
-      if (pacSelId) {
+      // Última ubicación del paciente (solo cuidador)
+      if (pacSelId && !esFamiliar) {
         try {
           const res   = await pacienteService.ultimaUbicacion(pacSelId)
           const coord = res.data?.coordenadas
@@ -170,7 +221,8 @@ export default function ZonasSeguras() {
     }
 
     cargarUbicIniciales()
-  }, [creando, pacSelId, inyectarUbicaciones])
+    inyectarZonasEnMapa()
+  }, [creando, pacSelId, inyectarUbicaciones, inyectarZonasEnMapa])
 
   const cargar = async () => {
     try {
@@ -181,6 +233,7 @@ export default function ZonasSeguras() {
         ])
         const pacs: any[] = Array.isArray(resPac.data) ? resPac.data : []
         setPacientes(pacs)
+        if (pacs.length > 0) setPacSelId(pacs[0].id_paciente ?? pacs[0].id)
         const validas = (Array.isArray(resZonas.data) ? resZonas.data : []).filter((z: any) => !!z.id)
         setZonas(validas)
       } else {
@@ -212,6 +265,12 @@ export default function ZonasSeguras() {
     mapRef.current?.injectJavaScript(`updateRadio(${radioNum}); true;`)
   }, [radio, creando])
 
+  useEffect(() => {
+    if (!editandoZona || !editMapListoRef.current) return
+    const radioNum = parseInt(editRadio) || 150
+    mapRef.current?.injectJavaScript(`updateRadio(${radioNum}); true;`)
+  }, [editRadio, editandoZona])
+
   const handleCrear = async () => {
     if (!nombre.trim()) { Alert.alert('Falta el nombre', 'Escribe un nombre para la zona.'); return }
     if (!centro)        { Alert.alert('Falta el centro', 'Toca el mapa para elegir el centro de la zona.'); return }
@@ -221,7 +280,8 @@ export default function ZonasSeguras() {
     }
     setGuardando(true)
     try {
-      await zonaService.crear({ nombre: nombre.trim(), paciente_id: pacSelId, centro, radio_metros: radioNum })
+      const payload = { nombre: nombre.trim(), paciente_id: pacSelId, centro, radio_metros: radioNum }
+      await (esFamiliar ? zonaService.crearFamiliar(payload) : zonaService.crear(payload))
       setCreando(false); setNombre(''); setRadio('150'); setCentro(null)
       await cargar()
     } catch (err: any) {
@@ -243,16 +303,33 @@ export default function ZonasSeguras() {
     ])
   }
 
-  const handleToggle = async (id: string, activa: boolean) => {
-    if (toggling) return
-    setToggling(id)
+  const handleEditar = (zona: any) => {
+    setEditandoZona(zona)
+    setEditNombre(zona.nombre)
+    setEditRadio(String(Math.round(zona.radio_metros)))
+    setEditCentro(zona.centro)
+    editMapListoRef.current = false
+  }
+
+  const handleGuardarEdicion = async () => {
+    if (!editNombre.trim()) { Alert.alert('Falta el nombre', 'Escribe un nombre para la zona.'); return }
+    const radioNum = parseInt(editRadio)
+    if (isNaN(radioNum) || radioNum < 10 || radioNum > 500) {
+      Alert.alert('Radio inválido', 'El radio debe estar entre 10 y 500 metros.'); return
+    }
+    setGuardandoEdicion(true)
     try {
-      await zonaService.toggle(id, !activa)
-      setZonas((z) => z.map((x) => x.id === id ? { ...x, activa: !x.activa } : x))
+      await zonaService.actualizar(editandoZona.id, {
+        nombre: editNombre.trim(),
+        radio_metros: radioNum,
+        centro: editCentro ?? editandoZona.centro,
+      })
+      setEditandoZona(null)
+      await cargar()
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo actualizar la zona.')
     } finally {
-      setToggling(null)
+      setGuardandoEdicion(false)
     }
   }
 
@@ -269,6 +346,7 @@ export default function ZonasSeguras() {
           onLoadEnd={() => {
             mapaListoRef.current = true
             inyectarUbicaciones()
+            inyectarZonasEnMapa()
           }}
           onMessage={(e) => {
             try {
@@ -355,6 +433,85 @@ export default function ZonasSeguras() {
     )
   }
 
+  // ── Vista de edición con mapa ─────────────────────────────────────────
+  if (editandoZona) {
+    return (
+      <View style={{ flex: 1 }}>
+        <WebView
+          ref={mapRef}
+          style={styles.mapCrear}
+          source={{ html: ZONA_MAP_HTML }}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          onLoadEnd={() => {
+            editMapListoRef.current = true
+            if (editCentro) {
+              const radioNum = parseInt(editRadio) || 150
+              mapRef.current?.injectJavaScript(`setInitial(${editCentro.latitud}, ${editCentro.longitud}, ${radioNum}); true;`)
+            }
+            const otrasZonas = zonas.filter((z) =>
+              z.paciente_id === editandoZona.paciente_id && z.id !== editandoZona.id
+            )
+            const jsonStr = JSON.stringify(otrasZonas)
+            mapRef.current?.injectJavaScript(`dibujarZonasExistentes(${JSON.stringify(jsonStr)}); true;`)
+          }}
+          onMessage={(e) => {
+            try {
+              const { lat, lng } = JSON.parse(e.nativeEvent.data)
+              setEditCentro({ latitud: lat, longitud: lng })
+            } catch {}
+          }}
+        />
+
+        <SafeAreaView style={styles.panel} edges={['bottom']}>
+          <View style={styles.panelHandle} />
+          <Text style={styles.panelTitle}>Editar zona segura</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>Nombre</Text>
+              <TextInput style={styles.input} placeholder="Ej: Casa, Parque"
+                placeholderTextColor={Colors.textSecondary}
+                value={editNombre} onChangeText={setEditNombre} />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Radio (m)</Text>
+              <TextInput style={[styles.input, { width: 80, textAlign: 'center' }]}
+                keyboardType="number-pad" placeholder="150"
+                placeholderTextColor={Colors.textSecondary}
+                value={editRadio} onChangeText={setEditRadio} />
+            </View>
+          </View>
+
+          {editCentro && (
+            <View style={styles.coordBox}>
+              <Ionicons name="location" size={14} color={Colors.primary} />
+              <Text style={styles.coordText}>
+                {editCentro.latitud.toFixed(5)}, {editCentro.longitud.toFixed(5)}
+              </Text>
+              <Text style={[styles.coordText, { color: Colors.textSecondary, fontSize: 10 }]}>
+                Toca el mapa para mover
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.panelBtns}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditandoZona(null)} activeOpacity={0.8}>
+              <Text style={styles.cancelText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.crearBtn, guardandoEdicion && styles.crearBtnDisabled]}
+              onPress={handleGuardarEdicion} disabled={guardandoEdicion} activeOpacity={0.85}>
+              {guardandoEdicion
+                ? <ActivityIndicator size="small" color={Colors.white} />
+                : <Text style={styles.crearText}>Guardar cambios</Text>}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    )
+  }
+
   // ── Vista de lista ─────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
@@ -363,11 +520,9 @@ export default function ZonasSeguras() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Zonas seguras</Text>
-        {!esFamiliar && (
-          <TouchableOpacity onPress={() => setCreando(true)} style={styles.addBtn} activeOpacity={0.8}>
-            <Ionicons name="add" size={26} color={Colors.white} />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => setCreando(true)} style={styles.addBtn} activeOpacity={0.8}>
+          <Ionicons name="add" size={26} color={Colors.white} />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -377,9 +532,7 @@ export default function ZonasSeguras() {
           {zonas.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="shield-outline" size={56} color={Colors.primaryLight} />
-              <Text style={styles.emptyText}>
-                {esFamiliar ? 'No hay zonas seguras registradas' : 'No hay zonas seguras\nToca + para crear una'}
-              </Text>
+              <Text style={styles.emptyText}>No hay zonas seguras{'\n'}Toca + para crear una</Text>
             </View>
           ) : zonas.map((item) => {
             const pac = pacientes.find((p) => (p.id_paciente ?? p.id) === item.paciente_id)
@@ -390,29 +543,28 @@ export default function ZonasSeguras() {
                     <Ionicons name="shield-checkmark" size={22}
                       color={item.activa ? Colors.primary : Colors.textSecondary} />
                   </View>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.zonaNombre}>{item.nombre}</Text>
                     <Text style={styles.zonaMeta}>{pac?.nombre_paciente ?? '—'} · {item.radio_metros}m</Text>
                   </View>
                 </View>
-                {!esFamiliar && (
-                  <View style={styles.cardActions}>
-                    <TouchableOpacity
-                      onPress={() => handleToggle(item.id, item.activa)}
-                      activeOpacity={0.7}
-                      style={[styles.actionBtn, toggling === item.id && { opacity: 0.4 }]}
-                      disabled={toggling !== null}
-                    >
-                      {toggling === item.id
-                        ? <ActivityIndicator size="small" color={Colors.primary} />
-                        : <Ionicons name={item.activa ? 'toggle' : 'toggle-outline'} size={28}
-                            color={item.activa ? Colors.primary : Colors.textSecondary} />}
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleEliminar(item.id)} activeOpacity={0.7} style={styles.actionBtn}>
-                      <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                    </TouchableOpacity>
+                <View style={styles.cardActions}>
+                  <View style={[styles.estadoBadge, item.activa ? styles.estadoActiva : styles.estadoPendiente]}>
+                    <Text style={[styles.estadoText, item.activa ? styles.estadoActivaText : styles.estadoPendienteText]}>
+                      {item.activa ? 'Activa' : 'Pendiente'}
+                    </Text>
                   </View>
-                )}
+                  {!esFamiliar && (
+                    <>
+                      <TouchableOpacity onPress={() => handleEditar(item)} activeOpacity={0.7} style={styles.actionBtn}>
+                        <Ionicons name="pencil-outline" size={20} color={Colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleEliminar(item.id)} activeOpacity={0.7} style={styles.actionBtn}>
+                        <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               </View>
             )
           })}
@@ -433,8 +585,14 @@ const styles = StyleSheet.create({
   list:   { padding: 16, gap: 12, flexGrow: 1 },
   card:   { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, borderRadius: 18, padding: 16, gap: 12, elevation: 3 },
   cardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardActions: { flexDirection: 'row', gap: 4 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionBtn:   { padding: 6 },
+  estadoBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginRight: 4 },
+  estadoActiva: { backgroundColor: '#dbeafe' },
+  estadoPendiente: { backgroundColor: '#fff7ed' },
+  estadoText: { fontSize: 11, fontWeight: '700' },
+  estadoActivaText: { color: '#1d4ed8' },
+  estadoPendienteText: { color: '#c2410c' },
   zonaIcon:    { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.primaryBg, justifyContent: 'center', alignItems: 'center' },
   zonaIconOff: { backgroundColor: Colors.surface },
   zonaNombre:  { fontSize: 15, fontWeight: '700', color: Colors.text },

@@ -1,6 +1,6 @@
 from database.database import get_database
 from models.model_familiar import CrearFamiliar
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import bcrypt
 from utils.Logger import Logger
@@ -19,7 +19,7 @@ async def registrar_familiar(datos: CrearFamiliar):
 
         if await col_familiares.find_one({"email": datos.email}):
             Logger.add_to_log("warn", f"Email familiar ya registrado: {datos.email}")
-            return {"error": "Este correo ya ha sido registrado"}
+            return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         grupo_id = None
         if datos.codigo_grupo:
@@ -42,7 +42,7 @@ async def registrar_familiar(datos: CrearFamiliar):
             "phone":      datos.phone,
             "grupo_ids":  [grupo_id] if grupo_id else [],
             "activo":     True,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         }
 
         resultado   = await col_familiares.insert_one(doc)
@@ -99,6 +99,22 @@ async def verificar_familiar(email: str, password: str):
         Logger.add_to_log("error", f"Error al verificar familiar: {ex}")
         await asyncio.sleep(AUTH_DELAY)
         return {"mensaje": "Credenciales inválidas"}
+
+
+async def actualizar_fcm_familiar(email: str, fcm_token: str):
+    try:
+        coleccion = get_database()["Familiares"]
+        resultado = await coleccion.update_one(
+            {"email": email},
+            {"$set": {"fcm_token": fcm_token}}
+        )
+        if resultado.matched_count == 0:
+            return {"error": "Familiar no encontrado"}
+        Logger.add_to_log("info", f"FCM token familiar actualizado para: {email}")
+        return {"mensaje": "Token FCM actualizado exitosamente"}
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al actualizar FCM token familiar: {ex}")
+        return {"error": f"No se pudo actualizar el token: {ex}"}
 
 
 async def listar_grupos_familiar(familiar_id: str) -> list:

@@ -82,7 +82,7 @@ python -c "from MQTT.subscriber import mqtt_subscriber_task; print('OK')"
 
 ### Architecture
 
-The app boots in `app.py`, which registers all routers and starts two background async tasks: `mqtt_subscriber_task` (receives GPS from HiveMQ) and `tarea_alertas` (re-sends active alerts every 5 min).
+The app boots in `app.py`, which registers all routers and starts three background async tasks: `mqtt_subscriber_task` (receives GPS from HiveMQ), `tarea_alertas` (re-sends active alerts every 5 min), and `tarea_watchdog_gps` (runs every 30 s, calls `verificar_senal_perdida()` to fire `"senal_perdida"` alerts when a device stops reporting).
 
 Each domain follows a three-layer pattern:
 
@@ -124,11 +124,14 @@ Wrong field names have caused multiple bugs — use these exactly:
 
 **ZonasSeguras:** `centro: {latitud, longitud}`, `radio_metros` (not `radio`), `activa: bool` (not `estado: "activa"`), `paciente_id: str`
 
-**Pacientes:** `nombre_paciente` (not `nombre`), `edad_paciente`, `cedula`, `eps`, `enfermedad`, `familiar_nombre`, `familiar_telefono`, `fuera_de_zona: bool`, `ultima_alerta_timestamp`, `ultima_alerta_velocidad_timestamp`, `id_paciente` (response alias for `_id`). Modo viaje fields: `modo_viaje_activo: bool`, `modo_viaje_tipo`, `modo_viaje_inicio`, `modo_viaje_fin`, `modo_viaje_activado_por`.
+**Pacientes:** `nombre_paciente` (not `nombre`), `edad_paciente`, `cedula`, `eps`, `enfermedad`, `familiar_nombre`, `familiar_telefono`, `fuera_de_zona: bool`, `ultima_alerta_timestamp`, `ultima_alerta_velocidad_timestamp`, `ultima_senal_perdida_alerta` (timestamp of last signal-lost alert; unset by `resolver_alertas_senal_perdida` when GPS resumes), `id_paciente` (response alias for `_id`). Modo viaje fields: `modo_viaje_activo: bool`, `modo_viaje_tipo`, `modo_viaje_inicio`, `modo_viaje_fin`, `modo_viaje_activado_por`.
 
 **Grupos:** `cuidador_ids: [str]` (not `cuidador_id`), `paciente_ids: [str]` (not `paciente_id`), `familiar_ids: [str]`, `codigo: str` (for joining)
 
-**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`. Two alert types: zone-exit (default) and `"anomalia_velocidad"` (fires when GPS speed exceeds 50 km/h — `VELOCIDAD_ANOMALIA_KMH`). Zone-exit cooldown: 300 s (`COOLDOWN_ALERTA_SEGUNDOS`); velocity anomaly cooldown: 120 s (`COOLDOWN_VELOCIDAD_SEGUNDOS`).
+**Alertas:** `estado` values are `"pendiente"`, `"enviada"`, `"resuelta"`, `"fallida"`. Document includes `paciente_nombre`, `zona_nombre`, `ultima_notif`. Three alert types:
+- zone-exit (default) — cooldown 300 s (`COOLDOWN_ALERTA_SEGUNDOS`)
+- `"anomalia_velocidad"` — fires when GPS speed exceeds 50 km/h (`VELOCIDAD_ANOMALIA_KMH`); cooldown 120 s (`COOLDOWN_VELOCIDAD_SEGUNDOS`)
+- `"senal_perdida"` — fires when a device stops reporting for ≥ 60 s (`UMBRAL_SENAL_PERDIDA_S`) while it had a signal in the previous 5 min (`VENTANA_DISPOSITIVO_S`); suppressed if someone is within 150 m (`RADIO_PROXIMIDAD_METROS`) or both carer and patient lost signal within the same 3 min window (dead-zone suppression, `VENTANA_ZONA_MUERTA_S`); cooldown 300 s (`COOLDOWN_SENAL_PERDIDA_S`). Auto-resolved by `resolver_alertas_senal_perdida()` when GPS resumes (called from MQTT subscriber on next valid message).
 
 **Dispositivos:** `id_dispositivo` (string identifier from ESP32), `paciente_id`, `ultima_conexion`
 
@@ -184,7 +187,7 @@ Uses **Expo Router** (file-based routing):
 
 **Cuidador/familiar location tracking:** `services/ubicacion.tsx` — `solicitarPermisos()`, `iniciarSeguimiento(onUbicacion)` (device GPS watch), `enviarUbicacionCuidador(grupoId, lat, lng)` (POST `/grupos/{id}/ubicacion`), `obtenerUbicacionesGrupo(grupoId)` (GET `/grupos/{id}/ubicaciones`, returns `{ cuidadores, pacientes }`), `enviarUbicacionFamiliar(grupoId, lat, lng)` (POST `/grupos/{id}/ubicacion/familiar`), `obtenerUbicacionesGrupoFamiliar(grupoId)` (GET `/grupos/{id}/ubicaciones/familiar`, returns `{ cuidadores, familiares, pacientes }`). Silently swallows network errors so it doesn't interrupt tracking.
 
-**Real-time location:** `hooks/useSSEUbicacion.ts` — connects to the SSE endpoint using `react-native-sse`, auto-reconnects on error after 5 s. SSE event data uses keys `lat`/`lng` (not `latitud`/`longitud`).
+**Real-time location:** `hooks/useSSEUbicacion.ts` — connects to the SSE endpoint using `react-native-sse`, auto-reconnects with exponential backoff (base 5 s, max 60 s, up to 10 retries). Returns `{ ubicacion, conectado, gpsActivo, errorPermanente }`: `gpsActivo` goes false if no message arrives within 60 s (`GPS_TIMEOUT_MS`); `errorPermanente` goes true after 10 failed reconnects. SSE event data uses keys `lat`/`lng` (not `latitud`/`longitud`).
 
 **Push notifications:** The real implementation lives in `services/notificaciones.ts`; `utils/notificaciones.ts` is a re-export shim — always import from `@/services/notificaciones` or `@/utils/notificaciones` (they resolve to the same code). `registrarToken()` is called after login (fire-and-forget), `configurarListeners(onAlerta)` is called in root layout. Both are no-ops in Expo Go (require a development build for actual push delivery). `Notifications.setNotificationHandler` must be guarded by `if (!IS_EXPO_GO)` (Expo Go SDK 53+ crashes otherwise).
 

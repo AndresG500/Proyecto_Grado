@@ -168,7 +168,7 @@ async def agregar_cuidador(grupo_id: str, cuidador_id: str, cuidador_solicitante
         return {"error": f"No se pudo agregar el cuidador: {ex}"}
 
 
-async def eliminar_cuidador(grupo_id: str, cuidador_id: str):
+async def eliminar_cuidador(grupo_id: str, cuidador_id: str, cuidador_solicitante_id: str):
     try:
         db             = get_database()
         col_grupos     = db["Grupos"]
@@ -179,8 +179,14 @@ async def eliminar_cuidador(grupo_id: str, cuidador_id: str):
             Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
             return {"mensaje": "No se encontró el grupo"}
 
+        es_principal   = str(grupo.get("cuidador_principal_id")) == cuidador_solicitante_id
+        es_autoeliminacion = cuidador_id == cuidador_solicitante_id
+        if not es_principal and not es_autoeliminacion:
+            Logger.add_to_log("warn", f"Eliminación de cuidador no autorizada: {cuidador_solicitante_id}")
+            return {"error": "No tienes permiso para eliminar cuidadores de este grupo"}
+
         # El cuidador principal no puede ser eliminado del grupo
-        if cuidador_id == grupo["cuidador_principal_id"]:
+        if cuidador_id == str(grupo.get("cuidador_principal_id")):
             Logger.add_to_log("warn", f"Intento de eliminar al cuidador principal: {cuidador_id}")
             return {"mensaje": "El cuidador principal no puede ser eliminado del grupo"}
 
@@ -225,6 +231,10 @@ async def agregar_paciente(grupo_id: str, paciente_id: str, cuidador_solicitante
         if not paciente:
             Logger.add_to_log("warn", f"Paciente no encontrado: {paciente_id}")
             return {"mensaje": "No se encontró el paciente"}
+
+        if str(paciente.get("id_cuidador")) != cuidador_solicitante_id:
+            Logger.add_to_log("warn", f"Paciente {paciente_id} no pertenece al cuidador: {cuidador_solicitante_id}")
+            return {"error": "El paciente no pertenece a tu cuenta"}
 
         if paciente_id in grupo["paciente_ids"]:
             Logger.add_to_log("warn", f"Paciente ya pertenece al grupo: {paciente_id}")

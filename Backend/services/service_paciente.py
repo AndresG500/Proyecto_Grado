@@ -1,7 +1,7 @@
 from database.database import get_database  # ← corregido
 from models.model_paciente import CrearPaciente, ActualizarPaciente
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.Logger import Logger
 from utils.sanitizer import sanitize_string
 
@@ -32,7 +32,7 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
             "ultima_ubicacion":   None,
             "ultima_señal":       None,
             "estado_dispositivo": None,
-            "created_at":         datetime.utcnow(),
+            "created_at":         datetime.now(timezone.utc),
             "activo":             True
         })
 
