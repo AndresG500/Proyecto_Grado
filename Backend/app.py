@@ -54,9 +54,23 @@ async def tarea_alertas():
 
 
 async def tarea_watchdog_gps():
+    primera_ronda = True
     while True:
         await asyncio.sleep(30)  # cada 30 s
         try:
+            if primera_ronda:
+                print(
+                    "\n ________________________\n"
+                    "( Rex en alerta...!       )\n"
+                    " ------------------------\n"
+                    "       \\\n"
+                    "        \\   / \\__\n"
+                    "         \\ (    @\\___\n"
+                    "          /          O\n"
+                    "         /   (_____/\n"
+                    "        /_____/   U\n"
+                )
+                primera_ronda = False
             await verificar_senal_perdida()
         except asyncio.CancelledError:
             raise
@@ -84,7 +98,23 @@ async def lifespan(app: FastAPI):
     mqtt_task     = asyncio.create_task(mqtt_subscriber_task())
     watchdog_task = asyncio.create_task(tarea_watchdog_gps())
 
+    print(
+        "\n  / \\__\n"
+        " (    @\\___    ( ¡Rex en linea! Vigilando cada 30s... )\n"
+        " /          O  \n"
+        "/   (_____/    \n"
+        "/_____/   U    \n"
+    )
+
     yield
+
+    print(
+        "\n  / \\__\n"
+        " (  - -\\___    ( zZz... hasta luego. )\n"
+        " /          O  \n"
+        "/   (_____/    \n"
+        "/_____/   U    \n"
+    )
 
     for task in (alertas_task, mqtt_task, watchdog_task):
         task.cancel()

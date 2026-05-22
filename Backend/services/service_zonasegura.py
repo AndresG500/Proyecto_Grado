@@ -53,10 +53,14 @@ async def verificar_paciente_pertenece_a_cuidador(paciente_id: str, cuidador_ema
         cuidador = await db["Cuidadores"].find_one({"email": cuidador_email})
         if not cuidador:
             return False
+        cuidador_id = str(cuidador["_id"])
         paciente = await db["Pacientes"].find_one({"_id": ObjectId(paciente_id)})
         if not paciente:
             return False
-        return str(paciente.get("id_cuidador")) == str(cuidador["_id"])
+        if str(paciente.get("id_cuidador")) == cuidador_id:
+            return True
+        grupo = await db["Grupos"].find_one({"cuidador_ids": cuidador_id, "paciente_ids": paciente_id})
+        return grupo is not None
     except Exception:
         return False
 
@@ -65,6 +69,13 @@ async def crear_zona_segura(datos: CrearZonaSegura):
     try:
         db = get_database()
         coleccion = db["ZonasSeguras"]
+
+        try:
+            paciente = await db["Pacientes"].find_one({"_id": ObjectId(datos.paciente_id)})
+        except Exception:
+            paciente = None
+        if not paciente:
+            return {"error": "Paciente no encontrado"}
 
         zona_existente = await coleccion.find_one({
             "paciente_id": datos.paciente_id,

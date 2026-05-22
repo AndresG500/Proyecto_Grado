@@ -27,7 +27,8 @@ async def crear_zona_familiar(
     datos.cuidador_id = familiar_id
     resultado = await crear_zona_segura(datos)
     if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
+        status = 404 if "no encontrado" in resultado["error"].lower() else 400
+        raise HTTPException(status_code=status, detail=resultado["error"])
     if "mensaje" in resultado and "ya existe" in resultado["mensaje"].lower():
         raise HTTPException(status_code=409, detail=resultado["mensaje"])
     return resultado
@@ -43,7 +44,8 @@ async def crear_zona(
     datos.cuidador_id = str(cuidador_actual["_id"])
     resultado = await crear_zona_segura(datos)
     if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
+        status = 404 if "no encontrado" in resultado["error"].lower() else 400
+        raise HTTPException(status_code=status, detail=resultado["error"])
     if "mensaje" in resultado and "ya existe" in resultado["mensaje"].lower():
         raise HTTPException(status_code=409, detail=resultado["mensaje"])
     return resultado
