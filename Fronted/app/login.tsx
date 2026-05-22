@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const [showPassword,    setShowPassword]    = useState(false)
   const [loading,         setLoading]         = useState(false)
   const [error,           setError]           = useState('')
+  const [errorEsServidor, setErrorEsServidor] = useState(false)
   const { login } = useAuth()
   const router    = useRouter()
 
@@ -43,12 +44,17 @@ export default function LoginScreen() {
         data = res.data
         tipo = 'familiar'
       } catch (familiarErr: any) {
-        const msg =
-          familiarErr.response?.data?.detail  ??
-          familiarErr.response?.data?.mensaje ??
-          familiarErr.response?.data?.error   ??
-          'Credenciales inválidas. Verifica tu correo y contraseña.'
-        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+        const status = familiarErr?.response?.status
+        if (status && status >= 500) {
+          setErrorEsServidor(true)
+          setError('Error en el servidor. Inténtalo más tarde.')
+        } else if (!status) {
+          setErrorEsServidor(false)
+          setError('Sin conexión. Verifica tu red e intenta de nuevo.')
+        } else {
+          setErrorEsServidor(false)
+          setError('Correo o contraseña incorrectos.')
+        }
         setLoading(false)
         return
       }
@@ -98,9 +104,14 @@ export default function LoginScreen() {
               <Text style={styles.cardTitle}>Iniciar sesión</Text>
 
               {error ? (
-                <View style={styles.errorBox}>
-                  <Ionicons name="warning-outline" size={15} color={Colors.error} style={{ marginRight: 6, marginTop: 1 }} />
-                  <Text style={styles.errorText}>{error}</Text>
+                <View style={errorEsServidor ? styles.errorBox : styles.warningBox}>
+                  <Ionicons
+                    name="warning-outline"
+                    size={15}
+                    color={errorEsServidor ? Colors.error : Colors.warning}
+                    style={{ marginRight: 6, marginTop: 1 }}
+                  />
+                  <Text style={errorEsServidor ? styles.errorText : styles.warningText}>{error}</Text>
                 </View>
               ) : null}
 
@@ -210,6 +221,12 @@ const styles = StyleSheet.create({
     marginBottom: 16, borderLeftWidth: 4, borderLeftColor: Colors.error,
   },
   errorText: { flex: 1, color: Colors.error, fontSize: 13, lineHeight: 19 },
+  warningBox: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 14,
+    marginBottom: 16, borderLeftWidth: 4, borderLeftColor: Colors.warning,
+  },
+  warningText: { flex: 1, color: '#92400e', fontSize: 13, lineHeight: 19 },
 
   field:     { marginBottom: 16 },
   label:     { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 7 },

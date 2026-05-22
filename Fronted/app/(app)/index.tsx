@@ -16,6 +16,7 @@ import {
   enviarUbicacionFamiliar, obtenerUbicacionesGrupoFamiliar,
   type UbicacionCuidador, type UbicacionFamiliar,
 } from '@/services/ubicacion'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 function escaparJs(s: string): string {
   return s
@@ -487,6 +488,7 @@ export default function MapScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <View style={styles.container}>
       {mapHtml ? (
         <WebView
@@ -566,6 +568,7 @@ export default function MapScreen() {
         onCambio={cargarDatos}
       />
     </View>
+    </AnimatedScreen>
   )
 }
 

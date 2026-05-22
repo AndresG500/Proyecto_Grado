@@ -11,6 +11,9 @@ import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { mensajeDeError } from '@/utils/errores'
+import ConfirmModal from '@/components/ConfirmModal'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name']
 
@@ -150,7 +153,7 @@ function EditarModal({
       })
       onGuardado()
     } catch (e: any) {
-      setError(e.response?.data?.detail ?? 'No se pudo guardar.')
+      setError(mensajeDeError(e, 'No se pudo guardar los cambios. Inténtalo de nuevo.'))
     } finally {
       setSaving(false)
     }
@@ -264,7 +267,14 @@ export default function PacientesScreen() {
   const [pacientes, setPacientes]         = useState<any[]>([])
   const [loading,   setLoading]           = useState(true)
   const [error,     setError]             = useState('')
-  const [editando,  setEditando]          = useState<any | null>(null)
+  const [editando,      setEditando]      = useState<any | null>(null)
+  const [exito,         setExito]         = useState('')
+  const [pacAEliminar,  setPacAEliminar]  = useState<any | null>(null)
+
+  const mostrarExito = useCallback((msg: string) => {
+    setExito(msg)
+    setTimeout(() => setExito(''), 3000)
+  }, [])
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -284,28 +294,23 @@ export default function PacientesScreen() {
   useFocusEffect(useCallback(() => { cargar() }, [cargar]))
 
   const confirmarEliminar = (pac: any) => {
-    Alert.alert(
-      'Eliminar paciente',
-      `¿Seguro que deseas eliminar a ${pac.nombre_paciente}? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await pacienteService.eliminar(pac.id_paciente)
-              cargar()
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar el paciente.')
-            }
-          },
-        },
-      ]
-    )
+    setPacAEliminar(pac)
+  }
+
+  const ejecutarEliminar = async () => {
+    if (!pacAEliminar) return
+    const pac = pacAEliminar
+    setPacAEliminar(null)
+    try {
+      await pacienteService.eliminar(pac.id_paciente)
+      cargar()
+    } catch {
+      Alert.alert('Error', 'No se pudo eliminar el paciente.')
+    }
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity
@@ -327,8 +332,16 @@ export default function PacientesScreen() {
         )}
       </View>
 
-      <ScrollView
-        style={styles.content}
+      <View style={{ flex: 1 }}>
+        {exito ? (
+          <View style={styles.successBox}>
+            <Ionicons name="checkmark-circle-outline" size={15} color={Colors.success} style={{ marginRight: 6 }} />
+            <Text style={styles.successText}>{exito}</Text>
+          </View>
+        ) : null}
+
+        <ScrollView
+          style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -364,17 +377,29 @@ export default function PacientesScreen() {
             />
           ))
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
+
+      <ConfirmModal
+        visible={!!pacAEliminar}
+        titulo="Eliminar paciente"
+        mensaje={`¿Seguro que deseas eliminar a ${pacAEliminar?.nombre_paciente ?? 'este paciente'}? Esta acción no se puede deshacer.`}
+        textoConfirm="Eliminar"
+        onCancel={() => setPacAEliminar(null)}
+        onConfirm={ejecutarEliminar}
+        destructivo
+      />
 
       {editando && (
         <EditarModal
           visible={!!editando}
           pac={editando}
           onCerrar={() => setEditando(null)}
-          onGuardado={() => { setEditando(null); cargar() }}
+          onGuardado={() => { setEditando(null); cargar(); mostrarExito('Cambios guardados correctamente.') }}
         />
       )}
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 
@@ -446,4 +471,7 @@ const styles = StyleSheet.create({
   mBtn:          { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 15, marginTop: 4, marginBottom: 8, elevation: 3 },
   mBtnDisabled:  { opacity: 0.6 },
   mBtnText:      { color: Colors.white, fontSize: 15, fontWeight: '700' },
+
+  successBox:  { position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: Colors.success, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  successText: { flex: 1, color: '#065f46', fontSize: 13, lineHeight: 19 },
 })

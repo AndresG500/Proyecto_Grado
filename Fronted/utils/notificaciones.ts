@@ -1,1 +1,1 @@
-export { registrarToken, configurarListeners } from '@/services/notificaciones'
+export { registrarToken, configurarListeners, verificarNotifInicial } from '@/services/notificaciones'

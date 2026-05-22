@@ -18,11 +18,11 @@ const Notifications: NotificationsModule | null = IS_EXPO_GO
 if (Notifications) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: false,   // mostramos banner propio en primer plano
       shouldPlaySound: true,
       shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
+      shouldShowBanner: false,
+      shouldShowList: true,     // sigue apareciendo en el centro de notificaciones
     }),
   });
 
@@ -80,13 +80,8 @@ export async function registrarToken(): Promise<void> {
 }
 
 export function configurarListeners(
-  onAlerta: (data: {
-    tipo: string;
-    alerta_id: string;
-    paciente_id: string;
-    lat: string;
-    lng: string;
-  }) => void
+  onRecibida: (titulo: string, cuerpo: string) => void,
+  onTap: () => void,
 ): () => void {
   if (!Notifications) {
     console.log('[Notificaciones] Listeners omitidos en Expo Go');
@@ -98,17 +93,27 @@ export function configurarListeners(
 
   subs.push(
     Notifications.addNotificationReceivedListener((notif) => {
-      const data = notif.request.content.data as any;
-      if (data?.paciente_id) onAlerta(data);
+      const titulo = notif.request.content.title ?? 'Alerta UbiLife';
+      const cuerpo = notif.request.content.body  ?? '';
+      onRecibida(titulo, cuerpo);
     })
   );
 
   subs.push(
-    Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as any;
-      if (data?.paciente_id) onAlerta(data);
+    Notifications.addNotificationResponseReceivedListener(() => {
+      onTap();
     })
   );
 
   return () => subs.forEach((s) => s.remove());
+}
+
+export async function verificarNotifInicial(): Promise<boolean> {
+  if (!Notifications) return false;
+  try {
+    const resp = await Notifications.getLastNotificationResponseAsync();
+    return !!resp;
+  } catch {
+    return false;
+  }
 }

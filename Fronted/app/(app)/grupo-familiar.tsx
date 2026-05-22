@@ -13,6 +13,9 @@ import { Colors } from '@/constants/Colors'
 import { grupoService, pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import { enviarUbicacionFamiliar } from '@/services/ubicacion'
+import { mensajeDeError } from '@/utils/errores'
+import ConfirmModal from '@/components/ConfirmModal'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 interface Grupo {
   id:                    string
@@ -105,6 +108,13 @@ export default function GrupoFamiliarScreen() {
   const [codigoInput,   setCodigoInput]   = useState('')
   const [uniendose,     setUniendose]     = useState(false)
   const [refreshing,    setRefreshing]    = useState(false)
+  const [exito,         setExito]         = useState('')
+  const [grupoAEliminar, setGrupoAEliminar] = useState<string | null>(null)
+
+  const mostrarExito = useCallback((msg: string) => {
+    setExito(msg)
+    setTimeout(() => setExito(''), 3000)
+  }, [])
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -177,23 +187,27 @@ export default function GrupoFamiliarScreen() {
       await grupoService.crear({ nombre: nombreNuevo.trim(), paciente_ids: pacSelIds })
       setModalCrear(false); setNombreNuevo(''); setPacSelIds([])
       await cargarDatos()
+      mostrarExito('Grupo familiar creado correctamente.')
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo crear el grupo.')
+      Alert.alert('Error al crear', mensajeDeError(err, 'No se pudo crear el grupo. Inténtalo de nuevo.'))
     } finally { setGuardando(false) }
   }
 
   const eliminarGrupo = (grupoId: string) => {
-    Alert.alert('Eliminar grupo', '¿Estás seguro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: async () => {
-          try {
-            await grupoService.eliminar(grupoId)
-            setGrupos((prev) => prev.filter((g) => g.id !== grupoId))
-          } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo eliminar el grupo.')
-          }
-        }},
-    ])
+    setGrupoAEliminar(grupoId)
+  }
+
+  const confirmarEliminarGrupo = async () => {
+    if (!grupoAEliminar) return
+    const id = grupoAEliminar
+    setGrupoAEliminar(null)
+    try {
+      await grupoService.eliminar(id)
+      setGrupos((prev) => prev.filter((g) => g.id !== id))
+      mostrarExito('Grupo eliminado correctamente.')
+    } catch (err: any) {
+      Alert.alert('Error al eliminar', mensajeDeError(err, 'No se pudo eliminar el grupo. Inténtalo de nuevo.'))
+    }
   }
 
   const handleUnirse = async () => {
@@ -203,8 +217,9 @@ export default function GrupoFamiliarScreen() {
       await grupoService.unirseConCodigo(codigoInput.trim())
       setModalUnirse(false); setCodigoInput('')
       await cargarDatos()
+      mostrarExito('Te has unido al grupo familiar.')
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail ?? 'Código inválido o error al unirse.')
+      Alert.alert('Código no válido', mensajeDeError(err, 'El código no es válido o ya expiró. Verifica e intenta de nuevo.'))
     } finally { setUniendose(false) }
   }
 
@@ -222,6 +237,7 @@ export default function GrupoFamiliarScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
@@ -237,7 +253,15 @@ export default function GrupoFamiliarScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <View style={{ flex: 1 }}>
+        {exito ? (
+          <View style={styles.successBox}>
+            <Ionicons name="checkmark-circle-outline" size={15} color={Colors.success} style={{ marginRight: 6 }} />
+            <Text style={styles.successText}>{exito}</Text>
+          </View>
+        ) : null}
+
+        <ScrollView
         style={styles.content}
         contentContainerStyle={{ padding: 16, gap: 16 }}
         refreshControl={
@@ -263,13 +287,7 @@ export default function GrupoFamiliarScreen() {
                 </TouchableOpacity>
               </>
             ) : (
-              <>
-                <Text style={styles.emptyDesc}>Crea un grupo para compartir el cuidado con tu familia.</Text>
-                <TouchableOpacity style={styles.createBtn} onPress={() => setModalCrear(true)} activeOpacity={0.85}>
-                  <Ionicons name="add" size={20} color={Colors.white} />
-                  <Text style={styles.createBtnText}>Crear grupo familiar</Text>
-                </TouchableOpacity>
-              </>
+              <Text style={styles.emptyDesc}>Crea un grupo para compartir el cuidado con tu familia.{'\n'}Toca el botón + para comenzar.</Text>
             )}
           </View>
         ) : (
@@ -345,7 +363,18 @@ export default function GrupoFamiliarScreen() {
             )
           })
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
+
+      <ConfirmModal
+        visible={!!grupoAEliminar}
+        titulo="Eliminar grupo familiar"
+        mensaje="¿Estás seguro de que quieres eliminar este grupo? Los miembros perderán el acceso."
+        textoConfirm="Eliminar"
+        onCancel={() => setGrupoAEliminar(null)}
+        onConfirm={confirmarEliminarGrupo}
+        destructivo
+      />
 
       {/* Modal: unirse */}
       <Modal visible={modalUnirse} transparent animationType="slide" onRequestClose={() => setModalUnirse(false)}>
@@ -421,6 +450,7 @@ export default function GrupoFamiliarScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 
@@ -484,4 +514,7 @@ const styles = StyleSheet.create({
   pacChipTextActivo: { color: Colors.primary, fontWeight: '700' },
   modalBtn:     { backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   modalBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+
+  successBox:  { position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: Colors.success, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  successText: { flex: 1, color: '#065f46', fontSize: 13, lineHeight: 19 },
 })

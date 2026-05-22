@@ -17,9 +17,10 @@ export default function RegisterCuidadorScreen() {
   const [phone,     setPhone]     = useState('')
   const [password,  setPassword]  = useState('')
   const [confirm,   setConfirm]   = useState('')
-  const [loading,   setLoading]   = useState(false)
-  const [error,     setError]     = useState('')
-  const [success,   setSuccess]   = useState(false)
+  const [loading,         setLoading]         = useState(false)
+  const [error,           setError]           = useState('')
+  const [errorEsServidor, setErrorEsServidor] = useState(false)
+  const [success,         setSuccess]         = useState(false)
   const router = useRouter()
 
   const validate = () => {
@@ -53,13 +54,20 @@ export default function RegisterCuidadorScreen() {
       await cuidadorService.registrar(payload)
       setSuccess(true)
     } catch (err: any) {
-      const msg =
-        err.response?.data?.detail  ??
-        err.response?.data?.duplicado ??
-        err.response?.data?.mensaje ??
-        err.response?.data?.error   ??
-        'No se pudo completar el registro. Intenta de nuevo.'
-      setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      const status = err?.response?.status
+      if (status === 409) {
+        setErrorEsServidor(false)
+        setError('Este correo ya está registrado. Prueba con otro o inicia sesión.')
+      } else if (status && status >= 500) {
+        setErrorEsServidor(true)
+        setError('No se pudo completar el registro. Inténtalo más tarde.')
+      } else if (!status) {
+        setErrorEsServidor(false)
+        setError('Sin conexión. Verifica tu red e intenta de nuevo.')
+      } else {
+        setErrorEsServidor(false)
+        setError('Verifica los datos ingresados e intenta de nuevo.')
+      }
     } finally {
       setLoading(false)
     }
@@ -117,9 +125,14 @@ export default function RegisterCuidadorScreen() {
           <View style={styles.card}>
 
             {error ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="warning-outline" size={15} color={Colors.error} style={{ marginRight: 6 }} />
-                <Text style={styles.errorText}>{error}</Text>
+              <View style={errorEsServidor ? styles.errorBox : styles.warningBox}>
+                <Ionicons
+                  name="warning-outline"
+                  size={15}
+                  color={errorEsServidor ? Colors.error : Colors.warning}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={errorEsServidor ? styles.errorText : styles.warningText}>{error}</Text>
               </View>
             ) : null}
 
@@ -306,6 +319,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.warning,
+  },
+  warningText: { flex: 1, color: '#92400e', fontSize: 13, lineHeight: 19 },
 
   field: { marginBottom: 16 },
   label: {

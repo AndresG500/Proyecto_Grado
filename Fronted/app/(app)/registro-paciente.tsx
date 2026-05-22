@@ -9,6 +9,8 @@ import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, dispositivoService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { mensajeDeError } from '@/utils/errores'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 type Dispositivo = { id_dispositivo: string; dispositivo_detectado: string }
 
@@ -82,7 +84,7 @@ export default function RegistroPacienteScreen() {
         router.replace('/(app)/pacientes' as any)
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? 'Error al registrar el paciente.')
+      setError(mensajeDeError(err, 'No se pudo registrar el paciente. Inténtalo de nuevo.'))
     } finally {
       setLoading(false)
     }
@@ -96,7 +98,7 @@ export default function RegistroPacienteScreen() {
       await dispositivoService.vincular({ id_dispositivo: dispositivoSeleccionado, paciente_id: pacienteId })
       router.replace('/(app)/pacientes' as any)
     } catch (err: any) {
-      setErrorVinculo(err.response?.data?.detail ?? 'Error al vincular el dispositivo.')
+      setErrorVinculo(mensajeDeError(err, 'No se pudo vincular el dispositivo. Inténtalo de nuevo.'))
     } finally {
       setVinculando(false)
     }
@@ -190,6 +192,7 @@ export default function RegistroPacienteScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
@@ -341,6 +344,7 @@ export default function RegistroPacienteScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 

@@ -9,6 +9,7 @@ import { DrawerActions, useNavigation, useFocusEffect } from '@react-navigation/
 import { Colors } from '@/constants/Colors'
 import { alertaService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name']
 
@@ -189,6 +190,7 @@ export default function AlertasScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       {/* ── Header navy ── */}
       <View style={styles.header}>
@@ -238,6 +240,7 @@ export default function AlertasScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 

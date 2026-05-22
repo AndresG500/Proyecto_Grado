@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 interface Ubicacion {
   id: string
@@ -157,6 +158,7 @@ export default function HistorialUbicacionesScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
@@ -247,6 +249,7 @@ export default function HistorialUbicacionesScreen() {
         </View>
       )}
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 

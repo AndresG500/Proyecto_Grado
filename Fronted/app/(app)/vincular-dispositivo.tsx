@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { dispositivoService, pacienteService } from '@/services/api'
+import { mensajeDeError } from '@/utils/errores'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 export default function VincularDispositivoScreen() {
   const router = useRouter()
@@ -46,8 +48,7 @@ export default function VincularDispositivoScreen() {
       await dispositivoService.vincular({ id_dispositivo, paciente_id: pacSelId })
       setVinculado(true)
     } catch (err: any) {
-      const msg = err.response?.data?.detail ?? 'No se pudo vincular el dispositivo.'
-      Alert.alert('Error', typeof msg === 'string' ? msg : JSON.stringify(msg))
+      Alert.alert('Error al vincular', mensajeDeError(err, 'No se pudo vincular el dispositivo. Inténtalo de nuevo.'))
     } finally {
       setVinculando(null)
     }
@@ -71,6 +72,7 @@ export default function VincularDispositivoScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
@@ -164,6 +166,7 @@ export default function VincularDispositivoScreen() {
         <Text style={styles.skipText}>Omitir por ahora</Text>
       </TouchableOpacity>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 

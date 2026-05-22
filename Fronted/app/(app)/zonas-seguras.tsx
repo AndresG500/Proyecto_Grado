@@ -7,10 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import WebView from 'react-native-webview'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { useFocusEffect } from '@react-navigation/native'
 import * as Location from 'expo-location'
 import { Colors } from '@/constants/Colors'
 import { zonaService, pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { mensajeDeError } from '@/utils/errores'
+import ConfirmModal from '@/components/ConfirmModal'
+import AnimatedScreen from '@/components/AnimatedScreen'
 
 const { height: SCREEN_H } = Dimensions.get('window')
 
@@ -162,7 +166,15 @@ export default function ZonasSeguras() {
   const [centro,    setCentro]    = useState<Coord | null>(null)
   const [guardando, setGuardando] = useState(false)
 
+  const [exito,            setExito]            = useState('')
+  const [modalSinPac,      setModalSinPac]      = useState(false)
+  const [zonaAEliminar,    setZonaAEliminar]    = useState<string | null>(null)
   const [editandoZona,     setEditandoZona]     = useState<any | null>(null)
+
+  const mostrarExito = useCallback((msg: string) => {
+    setExito(msg)
+    setTimeout(() => setExito(''), 3000)
+  }, [])
   const [editNombre,       setEditNombre]       = useState('')
   const [editRadio,        setEditRadio]        = useState('150')
   const [editCentro,       setEditCentro]       = useState<Coord | null>(null)
@@ -257,7 +269,7 @@ export default function ZonasSeguras() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { cargar() }, [])
+  useFocusEffect(useCallback(() => { cargar() }, [esFamiliar]))
 
   useEffect(() => {
     if (!creando) return
@@ -284,23 +296,27 @@ export default function ZonasSeguras() {
       await (esFamiliar ? zonaService.crearFamiliar(payload) : zonaService.crear(payload))
       setCreando(false); setNombre(''); setRadio('150'); setCentro(null)
       await cargar()
+      mostrarExito('Zona segura guardada correctamente.')
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'No se pudo crear la zona.')
+      Alert.alert('Error al guardar', mensajeDeError(err, 'No se pudo guardar la zona segura. Inténtalo de nuevo.'))
     } finally { setGuardando(false) }
   }
 
   const handleEliminar = (id: string) => {
-    Alert.alert('Eliminar zona', '¿Seguro que quieres eliminar esta zona segura?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: async () => {
-          try {
-            await zonaService.eliminar(id)
-            await cargar()
-          } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo eliminar la zona.')
-          }
-        }},
-    ])
+    setZonaAEliminar(id)
+  }
+
+  const confirmarEliminar = async () => {
+    if (!zonaAEliminar) return
+    const id = zonaAEliminar
+    setZonaAEliminar(null)
+    try {
+      await zonaService.eliminar(id)
+      await cargar()
+      mostrarExito('Zona segura eliminada.')
+    } catch (err: any) {
+      Alert.alert('Error al eliminar', mensajeDeError(err, 'No se pudo eliminar la zona segura. Inténtalo de nuevo.'))
+    }
   }
 
   const handleEditar = (zona: any) => {
@@ -326,8 +342,9 @@ export default function ZonasSeguras() {
       })
       setEditandoZona(null)
       await cargar()
+      mostrarExito('Zona segura actualizada correctamente.')
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo actualizar la zona.')
+      Alert.alert('Error al actualizar', mensajeDeError(err, 'No se pudo actualizar la zona segura. Inténtalo de nuevo.'))
     } finally {
       setGuardandoEdicion(false)
     }
@@ -514,20 +531,56 @@ export default function ZonasSeguras() {
 
   // ── Vista de lista ─────────────────────────────────────────────────────
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Zonas seguras</Text>
-        <TouchableOpacity onPress={() => setCreando(true)} style={styles.addBtn} activeOpacity={0.8}>
+        <TouchableOpacity
+          onPress={() => {
+            if (pacientes.length === 0) { setModalSinPac(true); return }
+            setCreando(true)
+          }}
+          style={styles.addBtn}
+          activeOpacity={0.8}
+        >
           <Ionicons name="add" size={26} color={Colors.white} />
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primaryLight} /></View>
-      ) : (
+      <ConfirmModal
+        visible={modalSinPac}
+        titulo="Aún no tienes pacientes"
+        mensaje="Para crear una zona segura primero necesitas registrar un paciente. ¿Quieres hacerlo ahora?"
+        textoCancel="Ahora no"
+        textoConfirm="Registrar paciente"
+        onCancel={() => setModalSinPac(false)}
+        onConfirm={() => { setModalSinPac(false); router.push('/(app)/registro-paciente' as any) }}
+      />
+
+      <ConfirmModal
+        visible={!!zonaAEliminar}
+        titulo="Eliminar zona segura"
+        mensaje="¿Seguro que quieres eliminar esta zona? Esta acción no se puede deshacer."
+        textoConfirm="Eliminar"
+        onCancel={() => setZonaAEliminar(null)}
+        onConfirm={confirmarEliminar}
+        destructivo
+      />
+
+      <View style={{ flex: 1 }}>
+        {exito ? (
+          <View style={styles.successBox}>
+            <Ionicons name="checkmark-circle-outline" size={15} color={Colors.success} style={{ marginRight: 6 }} />
+            <Text style={styles.successText}>{exito}</Text>
+          </View>
+        ) : null}
+
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={Colors.primaryLight} /></View>
+        ) : (
         <ScrollView style={{ flex: 1, backgroundColor: '#f7fbfc' }} contentContainerStyle={styles.list}>
           {zonas.length === 0 ? (
             <View style={styles.center}>
@@ -568,9 +621,11 @@ export default function ZonasSeguras() {
               </View>
             )
           })}
-        </ScrollView>
-      )}
+          </ScrollView>
+        )}
+      </View>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 
@@ -623,4 +678,7 @@ const styles = StyleSheet.create({
   crearBtn:   { flex: 1, backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   crearBtnDisabled: { opacity: 0.45 },
   crearText:  { color: Colors.white, fontWeight: '700', fontSize: 15 },
+
+  successBox:  { position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: Colors.success, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  successText: { flex: 1, color: '#065f46', fontSize: 13, lineHeight: 19 },
 })

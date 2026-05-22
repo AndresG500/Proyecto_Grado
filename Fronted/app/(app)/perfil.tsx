@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { DrawerActions, useNavigation } from '@react-navigation/native'
 import { Colors } from '@/constants/Colors'
 import { useAuth } from '@/context/AuthContext'
+import AnimatedScreen from '@/components/AnimatedScreen'
 import { cuidadorService, familiarService } from '@/services/api'
 
 export default function PerfilScreen() {
@@ -65,6 +66,7 @@ export default function PerfilScreen() {
   }
 
   return (
+    <AnimatedScreen>
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       {/* ── Header navy ──────────────────────────────────────── */}
       <View style={styles.hero}>
@@ -207,6 +209,7 @@ export default function PerfilScreen() {
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+    </AnimatedScreen>
   )
 }
 

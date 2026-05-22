@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { Colors } from '@/constants/Colors'
 import { modoViajeService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { mensajeDeError } from '@/utils/errores'
+import ConfirmModal from '@/components/ConfirmModal'
 
 type Tipo = 'caminata' | 'vehiculo'
 
@@ -45,7 +47,8 @@ export default function ModoViajeModal({ visible, onClose, pacientes, estadoActi
   const [paso,        setPaso]        = useState<'tipo' | 'duracion'>('tipo')
   const [tipoSel,     setTipoSel]     = useState<Tipo | null>(null)
   const [pacienteSel, setPacienteSel] = useState<string>(pacientes[0]?.id ?? '')
-  const [cargando,    setCargando]    = useState(false)
+  const [cargando,         setCargando]         = useState(false)
+  const [confirmDesactivar, setConfirmDesactivar] = useState(false)
 
   useEffect(() => {
     if (pacientes.length > 0 && !pacienteSel) {
@@ -89,44 +92,35 @@ export default function ModoViajeModal({ visible, onClose, pacientes, estadoActi
       onCambio()
       handleClose()
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo activar el modo viaje.')
+      Alert.alert('Error al activar', mensajeDeError(err, 'No se pudo activar el modo viaje. Inténtalo de nuevo.'))
     } finally {
       setCargando(false)
     }
   }
 
-  const handleDesactivar = async () => {
+  const handleDesactivar = () => {
     if (!estadoActivo) return
+    setConfirmDesactivar(true)
+  }
+
+  const ejecutarDesactivar = async () => {
     const pac = pacientes[0]?.id ?? ''
     if (!pac) return
-
-    Alert.alert(
-      'Desactivar modo viaje',
-      '¿Quieres desactivar el modo viaje? El monitoreo normal se reanudará.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Desactivar',
-          style: 'destructive',
-          onPress: async () => {
-            setCargando(true)
-            try {
-              if (esFamiliar) {
-                await modoViajeService.desactivarFamiliar(pac)
-              } else {
-                await modoViajeService.desactivar(pac)
-              }
-              onCambio()
-              handleClose()
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.detail ?? 'No se pudo desactivar.')
-            } finally {
-              setCargando(false)
-            }
-          },
-        },
-      ]
-    )
+    setConfirmDesactivar(false)
+    setCargando(true)
+    try {
+      if (esFamiliar) {
+        await modoViajeService.desactivarFamiliar(pac)
+      } else {
+        await modoViajeService.desactivar(pac)
+      }
+      onCambio()
+      handleClose()
+    } catch (err: any) {
+      Alert.alert('Error al desactivar', mensajeDeError(err, 'No se pudo desactivar el modo viaje. Inténtalo de nuevo.'))
+    } finally {
+      setCargando(false)
+    }
   }
 
   const tipoLabel = estadoActivo?.tipo === 'vehiculo' ? 'Vehículo' : 'Caminata'
@@ -137,7 +131,7 @@ export default function ModoViajeModal({ visible, onClose, pacientes, estadoActi
     : 'Indefinido'
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={handleClose} />
 
       <View style={styles.sheet}>
@@ -281,6 +275,16 @@ export default function ModoViajeModal({ visible, onClose, pacientes, estadoActi
           </ScrollView>
         )}
       </View>
+
+      <ConfirmModal
+        visible={confirmDesactivar}
+        titulo="Desactivar modo viaje"
+        mensaje="¿Quieres desactivar el modo viaje? El monitoreo normal se reanudará."
+        textoConfirm="Desactivar"
+        onCancel={() => setConfirmDesactivar(false)}
+        onConfirm={ejecutarDesactivar}
+        destructivo
+      />
     </Modal>
   )
 }
