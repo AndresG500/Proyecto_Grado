@@ -14,24 +14,20 @@
 #include <PubSubClient.h>
 
 // ─── WiFi ─────────────────────────────────────────────────────
-const char* WIFI_SSID     = "MARCAVAL_2.4";
-const char* WIFI_PASSWORD = "*J$M#G%dz0";
+const char* WIFI_SSID     = "";
+const char* WIFI_PASSWORD = "";
 
 // ─── HiveMQ Cloud ─────────────────────────────────────────────
-const char* MQTT_HOST = "9faec96957b04979a37dbe980612ffa8.s1.eu.hivemq.cloud";
-const int   MQTT_PORT = 8883;
-const char* MQTT_USER = "Andres";
-const char* MQTT_PASS = "Pandax500";
-const char* CLIENT_ID = "Esp32-001";  // ← este es el identificador del dispositivo
+const char* MQTT_HOST = "";
+const int   MQTT_PORT = "";
+const char* MQTT_USER = "";
+const char* MQTT_PASS = "";
+const char* CLIENT_ID = "";  // ← este es el identificador del dispositivo
 
 // ─── Tópicos (dinámicos, basados en CLIENT_ID) ────────────────
 char topicPub[64];   // ubilife/dispositivo/{CLIENT_ID}/gps
 char topicSub[64];   // ubilife/dispositivo/{CLIENT_ID}/cmd
 
-// ─── Coordenada FIJA de prueba (UCC Santa Marta) ──────────────
-const float LAT_FIJA = 11.2408;
-const float LON_FIJA = -74.2110;
-const float ACC_FIJA = 3.5;
 
 // ─── Certificado R13 (Let's Encrypt) ──────────────────────────
 static const char* ROOT_CA = R"EOF(
